@@ -120,9 +120,46 @@ def parse_markdown_to_blocks(markdown: str) -> list[dict]:
             i += 1
             continue
 
+        # Unordered list (- or * at start)
+        if re.match(r"^[\-\*]\s+", line.strip()):
+            list_items = []
+            while i < len(lines) and re.match(r"^[\-\*]\s+", lines[i].strip()):
+                item_text = re.sub(r"^[\-\*]\s+", "", lines[i].strip())
+                list_items.append(item_text)
+                i += 1
+
+            blocks.append({
+                "type": "unordered_list",
+                "items": list_items,
+            })
+            continue
+
+        # Images in markdown: ![alt](url) - can be multiple per line
+        img_pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
+        img_matches = list(re.finditer(img_pattern, line))
+        if img_matches:
+            for img_match in img_matches:
+                blocks.append({
+                    "type": "image",
+                    "alt": img_match.group(1),
+                    "url": img_match.group(2),
+                })
+            i += 1
+            continue
+
         # Regular paragraph (may span multiple lines until empty line)
         para_lines = []
-        while i < len(lines) and lines[i].strip() and not lines[i].strip().startswith(("#", ">", "```", "---", "***", "___")):
+        while i < len(lines) and lines[i].strip():
+            current = lines[i].strip()
+            # Stop if we hit a block-level element
+            if current.startswith(("#", ">", "```", "---", "***", "___")):
+                break
+            # Stop if it's a list item (- or * followed by space)
+            if re.match(r"^[\-\*]\s+", current):
+                break
+            # Stop if it's an image
+            if re.match(r"^!\[", current):
+                break
             para_lines.append(lines[i])
             i += 1
 
@@ -135,6 +172,9 @@ def parse_markdown_to_blocks(markdown: str) -> list[dict]:
                 "type": "text",
                 "text": para_text,
             })
+        elif not para_lines:
+            # Safety: if we couldn't process this line, skip it to avoid infinite loop
+            i += 1
 
     return blocks
 
@@ -144,104 +184,140 @@ def extract_facets(text: str) -> tuple[str, list[dict]]:
     Extract inline formatting and convert to facets.
 
     Returns (plain_text, facets).
-    Handles: **bold**, *italic*, [link](url)
+    Handles: **bold**, *italic*, ~~strikethrough~~, [link](url), `code`
+    Supports nested formatting like **bold with *italic***.
     """
+    # Strategy: First build the plain text by processing all formats in order.
+    # Then, for each format, find its content in the final plain text to get correct positions.
+
+    # Step 1: Remove all formatting markers and track what was formatted
+    # Process in order: links, strikethrough, bold, italic, code
+
+    formatting_spans = []  # (start_in_plain, end_in_plain, format_type, extra_data)
+
+    # Helper to process and track
+    def process_format(txt, pattern, format_type, extra_fn=None):
+        new_text = ""
+        last_end = 0
+        spans = []
+
+        for match in re.finditer(pattern, txt):
+            # Add text before this match
+            prefix = txt[last_end:match.start()]
+            new_text += prefix
+
+            start_pos = len(new_text)  # Character position
+
+            # Get inner text
+            inner = match.group(1)
+            if inner is None and match.lastindex >= 2:
+                inner = match.group(2)
+
+            new_text += inner
+            end_pos = len(new_text)
+
+            extra = extra_fn(match) if extra_fn else None
+            spans.append((start_pos, end_pos, inner, format_type, extra))
+
+            last_end = match.end()
+
+        new_text += txt[last_end:]
+        return new_text, spans
+
+    current = text
+
+    # Process links
+    current, link_spans = process_format(
+        current,
+        r'\[([^\]]+)\]\(([^)]+)\)',
+        'link',
+        lambda m: m.group(2)
+    )
+
+    # Process strikethrough
+    current, strike_spans = process_format(
+        current,
+        r'~~(.+?)~~',
+        'strikethrough'
+    )
+
+    # Process bold
+    current, bold_spans = process_format(
+        current,
+        r'\*\*(.+?)\*\*|__(.+?)__',
+        'bold'
+    )
+
+    # Process italic
+    current, italic_spans = process_format(
+        current,
+        r'\*([^*]+)\*',
+        'italic'
+    )
+
+    # Process code
+    current, code_spans = process_format(
+        current,
+        r'`([^`]+)`',
+        'code'
+    )
+
+    plain_text = current
+
+    # Adjust spans for nested formatting
+    # When italic markers are removed from inside bold spans, we need to shrink those spans
+    # For italic: opening * is at i_start, closing * is at i_end (in the text WITH markers)
+
+    def adjust_outer_spans(outer_spans, inner_spans):
+        """Adjust outer span ends when inner formatting markers are removed."""
+        adjusted = []
+        for o_start, o_end, o_inner, o_fmt, o_extra in outer_spans:
+            adjustment = 0
+            for i_start, i_end, i_inner, i_fmt, i_extra in inner_spans:
+                # Opening marker position is i_start (before the span starts)
+                # Closing marker position is i_end (after the inner content)
+                opening_marker_pos = i_start
+                closing_marker_pos = i_end  # In the text BEFORE italic processing
+
+                # Check if opening marker is inside outer span
+                if opening_marker_pos >= o_start and opening_marker_pos < o_end:
+                    adjustment += 1
+
+                # Check if closing marker is inside outer span
+                # Note: closing marker is at position i_end in PRE-italic text
+                # We need to add 1 for the length of inner content to get to closing marker
+                closing_actual_pos = i_end + 1  # +1 because i_end is end of content, closing * is after
+                if closing_actual_pos > o_start and closing_actual_pos < o_end:
+                    adjustment += 1
+
+            adjusted.append((o_start, o_end - adjustment, o_inner, o_fmt, o_extra))
+        return adjusted
+
+    # Adjust bold spans for italic removals inside them
+    bold_spans = adjust_outer_spans(bold_spans, italic_spans)
+
+    # Strikethrough usually doesn't contain other formatting in our use case
+    # but handle it just in case
+    strike_spans = adjust_outer_spans(strike_spans, italic_spans)
+
+    # Now convert character positions to byte positions and build facets
     facets = []
-    plain_text = text
 
-    # Process links first: [text](url)
-    link_pattern = r'\[([^\]]+)\]\(([^)]+)\)'
-    offset_adjustment = 0
+    all_spans = link_spans + strike_spans + bold_spans + italic_spans + code_spans
 
-    for match in re.finditer(link_pattern, text):
-        link_text = match.group(1)
-        link_url = match.group(2)
+    for char_start, char_end, inner, fmt, extra in all_spans:
+        # Convert character positions to byte positions
+        byte_start = len(plain_text[:char_start].encode('utf-8'))
+        byte_end = len(plain_text[:char_end].encode('utf-8'))
 
-        # Calculate position in the result string
-        start_in_original = match.start()
-        start_adjusted = start_in_original - offset_adjustment
-
-        # Replace the markdown link with just the text
-        old_len = len(match.group(0))
-        new_len = len(link_text)
+        feature = {"$type": f"pub.leaflet.richtext.facet#{fmt}"}
+        if fmt == 'link' and extra:
+            feature["uri"] = extra
 
         facets.append({
-            "index": {
-                "byteStart": start_adjusted,
-                "byteEnd": start_adjusted + new_len,
-            },
-            "features": [{
-                "$type": "pub.leaflet.richtext.facet#link",
-                "uri": link_url,
-            }]
+            "index": {"byteStart": byte_start, "byteEnd": byte_end},
+            "features": [feature]
         })
-
-        offset_adjustment += old_len - new_len
-
-    # Remove link markdown syntax but keep text
-    plain_text = re.sub(link_pattern, r'\1', plain_text)
-
-    # Process bold: **text** or __text__
-    bold_pattern = r'\*\*([^*]+)\*\*|__([^_]+)__'
-
-    # We need to recalculate after link removal
-    temp_text = plain_text
-    plain_text = ""
-    last_end = 0
-
-    for match in re.finditer(bold_pattern, temp_text):
-        bold_text = match.group(1) or match.group(2)
-
-        # Add text before match
-        plain_text += temp_text[last_end:match.start()]
-        start_pos = len(plain_text.encode('utf-8'))
-
-        plain_text += bold_text
-        end_pos = len(plain_text.encode('utf-8'))
-
-        facets.append({
-            "index": {
-                "byteStart": start_pos,
-                "byteEnd": end_pos,
-            },
-            "features": [{
-                "$type": "pub.leaflet.richtext.facet#bold",
-            }]
-        })
-
-        last_end = match.end()
-
-    plain_text += temp_text[last_end:]
-
-    # Process italic: *text* (but not **)
-    italic_pattern = r'(?<!\*)\*([^*]+)\*(?!\*)'
-
-    temp_text = plain_text
-    plain_text = ""
-    last_end = 0
-
-    for match in re.finditer(italic_pattern, temp_text):
-        italic_text = match.group(1)
-
-        plain_text += temp_text[last_end:match.start()]
-        start_pos = len(plain_text.encode('utf-8'))
-
-        plain_text += italic_text
-        end_pos = len(plain_text.encode('utf-8'))
-
-        facets.append({
-            "index": {
-                "byteStart": start_pos,
-                "byteEnd": end_pos,
-            },
-            "features": [{
-                "$type": "pub.leaflet.richtext.facet#italic",
-            }]
-        })
-
-        last_end = match.end()
-
-    plain_text += temp_text[last_end:]
 
     return plain_text, facets
 
@@ -305,7 +381,195 @@ def convert_blocks_to_leaflet(blocks: list[dict]) -> list[dict]:
                 }
             })
 
+        elif block["type"] == "unordered_list":
+            list_children = []
+            for item in block["items"]:
+                plain_text, facets = extract_facets(item)
+                list_children.append({
+                    "content": {
+                        "$type": "pub.leaflet.blocks.text",
+                        "plaintext": plain_text,
+                        "facets": facets,
+                    }
+                })
+
+            leaflet_blocks.append({
+                "$type": "pub.leaflet.pages.linearDocument#block",
+                "block": {
+                    "$type": "pub.leaflet.blocks.unorderedList",
+                    "children": list_children,
+                }
+            })
+
+        elif block["type"] == "image":
+            # Images need special handling - store for later blob upload
+            # For now, add a placeholder that will be processed
+            leaflet_blocks.append({
+                "$type": "pub.leaflet.pages.linearDocument#block",
+                "block": {
+                    "$type": "pub.leaflet.blocks.image",
+                    "_pending_url": block["url"],
+                    "_alt": block.get("alt", ""),
+                }
+            })
+
     return leaflet_blocks
+
+
+def upload_blob(session: dict, image_data: bytes, mime_type: str = "image/jpeg") -> dict:
+    """
+    Upload an image blob to AT-Proto.
+
+    Returns the blob reference to use in records.
+    """
+    access_jwt = session["accessJwt"]
+
+    resp = requests.post(
+        "https://bsky.social/xrpc/com.atproto.repo.uploadBlob",
+        headers={
+            "Authorization": f"Bearer {access_jwt}",
+            "Content-Type": mime_type,
+        },
+        data=image_data,
+    )
+
+    if resp.status_code != 200:
+        print(f"Blob upload error: {resp.text}")
+        resp.raise_for_status()
+
+    return resp.json()["blob"]
+
+
+def get_image_dimensions(image_data: bytes) -> tuple[int, int]:
+    """Get image dimensions from image data."""
+    try:
+        # Try to get dimensions from image header
+        # PNG: bytes 16-24 contain width/height as 4-byte big-endian
+        if image_data[:8] == b'\x89PNG\r\n\x1a\n':
+            width = int.from_bytes(image_data[16:20], 'big')
+            height = int.from_bytes(image_data[20:24], 'big')
+            return width, height
+
+        # JPEG: more complex, look for SOF0 marker
+        if image_data[:2] == b'\xff\xd8':
+            i = 2
+            while i < len(image_data) - 8:
+                if image_data[i] == 0xff:
+                    marker = image_data[i + 1]
+                    if marker in (0xc0, 0xc1, 0xc2):  # SOF markers
+                        height = int.from_bytes(image_data[i + 5:i + 7], 'big')
+                        width = int.from_bytes(image_data[i + 7:i + 9], 'big')
+                        return width, height
+                    length = int.from_bytes(image_data[i + 2:i + 4], 'big')
+                    i += 2 + length
+                else:
+                    i += 1
+    except Exception:
+        pass
+
+    # Default fallback
+    return 800, 600
+
+
+def get_mime_type(url: str, data: bytes) -> str:
+    """Determine MIME type from URL or data."""
+    url_lower = url.lower()
+    if '.png' in url_lower:
+        return "image/png"
+    elif '.gif' in url_lower:
+        return "image/gif"
+    elif '.webp' in url_lower:
+        return "image/webp"
+
+    # Check magic bytes
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        return "image/png"
+    elif data[:3] == b'GIF':
+        return "image/gif"
+    elif data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return "image/webp"
+
+    return "image/jpeg"
+
+
+def process_pending_images(session: dict, leaflet_blocks: list[dict], post_dir: Path | None = None) -> list[dict]:
+    """
+    Process any pending image blocks by uploading blobs.
+
+    Looks for local images first (in post_dir/images/), then tries URL.
+    """
+    processed_blocks = []
+
+    for block_wrapper in leaflet_blocks:
+        block = block_wrapper.get("block", {})
+
+        if block.get("$type") == "pub.leaflet.blocks.image" and "_pending_url" in block:
+            url = block["_pending_url"]
+            alt = block.get("_alt", "")
+
+            image_data = None
+
+            # Try local file first
+            if post_dir:
+                # Extract filename from URL
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                local_candidates = [
+                    post_dir / "images" / Path(parsed.path).name,
+                    post_dir / url if not url.startswith("http") else None,
+                ]
+
+                for local_path in local_candidates:
+                    if local_path and local_path.exists():
+                        try:
+                            image_data = local_path.read_bytes()
+                            print(f"    Loaded local image: {local_path.name}")
+                            break
+                        except Exception:
+                            pass
+
+            # Try URL if no local file
+            if not image_data and url.startswith("http"):
+                try:
+                    resp = requests.get(url, timeout=30, headers={
+                        "User-Agent": "Mozilla/5.0 (compatible; LeafletImporter/1.0)"
+                    })
+                    resp.raise_for_status()
+                    image_data = resp.content
+                    print(f"    Downloaded image from URL")
+                except Exception as e:
+                    print(f"    Failed to download image: {e}")
+
+            if image_data and len(image_data) < 1000000:  # Max 1MB
+                try:
+                    mime_type = get_mime_type(url, image_data)
+                    width, height = get_image_dimensions(image_data)
+
+                    blob = upload_blob(session, image_data, mime_type)
+
+                    processed_blocks.append({
+                        "$type": "pub.leaflet.pages.linearDocument#block",
+                        "block": {
+                            "$type": "pub.leaflet.blocks.image",
+                            "image": blob,
+                            "alt": alt,
+                            "aspectRatio": {
+                                "width": width,
+                                "height": height,
+                            }
+                        }
+                    })
+                    continue
+                except Exception as e:
+                    print(f"    Failed to upload image blob: {e}")
+
+            # If image failed, skip it or add placeholder text
+            print(f"    Skipping image: {url[:50]}...")
+            continue
+
+        processed_blocks.append(block_wrapper)
+
+    return processed_blocks
 
 
 def publish_document(
@@ -314,6 +578,7 @@ def publish_document(
     title: str,
     markdown_content: str,
     published_at: str | None = None,
+    post_dir: Path | None = None,
 ) -> dict:
     """
     Publish a markdown document to Leaflet.
@@ -332,6 +597,9 @@ def publish_document(
 
     # Convert to Leaflet format
     leaflet_blocks = convert_blocks_to_leaflet(blocks)
+
+    # Process any pending images (upload blobs)
+    leaflet_blocks = process_pending_images(session, leaflet_blocks, post_dir)
 
     # If no blocks, add a simple text block
     if not leaflet_blocks:
@@ -456,6 +724,7 @@ def publish_posts(
                 title,
                 markdown,
                 published_at=post_meta.get("datetime"),
+                post_dir=post_dir,
             )
 
             # Store result
