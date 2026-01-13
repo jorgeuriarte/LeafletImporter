@@ -130,6 +130,10 @@ def html_to_markdown(html: str) -> str:
     markdown = re.sub(r"\n{3,}", "\n\n", markdown)
     markdown = markdown.strip()
 
+    # Convert escaped asterisks to emphasis (author used *text* for emphasis)
+    # Pattern: \*word(s)\* -> *word(s)* (italic)
+    markdown = re.sub(r'\\\*([^*\n]+)\\\*', r'*\1*', markdown)
+
     return markdown
 
 
