@@ -249,13 +249,22 @@ def extract_facets(text: str) -> tuple[str, list[dict]]:
 
     current = text
 
-    # Process links
+    # Process markdown links [text](url)
     current, link_spans = process_format(
         current,
         r'\[([^\]]+)\]\(([^)]+)\)',
         'link',
         lambda m: m.group(2)
     )
+
+    # Process autolinks <url> - URL becomes both text and link target
+    current, autolink_spans = process_format(
+        current,
+        r'<(https?://[^>]+)>',
+        'link',
+        lambda m: m.group(1)  # URL is both text and target
+    )
+    link_spans.extend(autolink_spans)
 
     # Process strikethrough
     current, strike_spans = process_format(
