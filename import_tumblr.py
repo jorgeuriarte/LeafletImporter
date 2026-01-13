@@ -103,22 +103,41 @@ def extract_images_from_html(html: str, base_url: str = "") -> list[dict]:
     return images
 
 
-def download_image(url: str, dest_dir: Path) -> tuple[str, bool]:
-    """Download an image and return the local filename."""
+def get_wayback_url(url: str) -> str | None:
+    """Check if URL exists in Wayback Machine and return archive URL."""
     try:
-        parsed = urlparse(url)
-        ext = Path(parsed.path).suffix or ".jpg"
-        ext = ext.split("?")[0][:10]
-        if not ext.startswith("."):
-            ext = ".jpg"
+        api_url = f"https://archive.org/wayback/available?url={url}"
+        response = requests.get(api_url, timeout=10)
+        response.raise_for_status()
 
-        url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
-        filename = f"{url_hash}{ext}"
-        filepath = dest_dir / filename
+        data = response.json()
+        snapshots = data.get("archived_snapshots", {})
+        if snapshots:
+            closest = snapshots.get("closest", {})
+            if closest.get("available"):
+                return closest.get("url")
+    except Exception:
+        pass
+    return None
 
-        if filepath.exists():
-            return filename, True
 
+def download_image(url: str, dest_dir: Path) -> tuple[str, bool]:
+    """Download an image and return the local filename. Falls back to Wayback Machine."""
+    parsed = urlparse(url)
+    ext = Path(parsed.path).suffix or ".jpg"
+    ext = ext.split("?")[0][:10]
+    if not ext.startswith("."):
+        ext = ".jpg"
+
+    url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
+    filename = f"{url_hash}{ext}"
+    filepath = dest_dir / filename
+
+    if filepath.exists():
+        return filename, True
+
+    # Try original URL first
+    try:
         response = requests.get(url, timeout=30, headers={
             "User-Agent": "Mozilla/5.0 (compatible; TumblrImporter/1.0)"
         })
@@ -128,9 +147,29 @@ def download_image(url: str, dest_dir: Path) -> tuple[str, bool]:
         filepath.write_bytes(response.content)
         return filename, True
 
-    except Exception as e:
-        print(f"    Failed to download {url[:50]}: {e}")
-        return "", False
+    except Exception:
+        pass  # Try Wayback Machine fallback
+
+    # Fallback to Wayback Machine
+    wayback_url = get_wayback_url(url)
+    if wayback_url:
+        try:
+            response = requests.get(wayback_url, timeout=30, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; TumblrImporter/1.0)"
+            })
+            response.raise_for_status()
+
+            # Verify it's actually an image
+            content_type = response.headers.get("content-type", "")
+            if "image" in content_type or len(response.content) > 100:
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                filepath.write_bytes(response.content)
+                print(f"    Recovered from Wayback: {filename}")
+                return filename, True
+        except Exception:
+            pass
+
+    return "", False
 
 
 def replace_images_in_html(html: str, image_map: dict[str, str]) -> str:
