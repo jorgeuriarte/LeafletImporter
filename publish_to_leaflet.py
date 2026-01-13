@@ -13,10 +13,33 @@ import argparse
 import json
 import re
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
+
+# Base32 sortable alphabet used by AT Protocol
+B32_CHARSET = "234567abcdefghijklmnopqrstuvwxyz"
+
+
+def generate_tid() -> str:
+    """Generate a proper AT Protocol TID (Timestamp ID)."""
+    # TID is 64 bits:
+    # - High 53 bits: microseconds since Unix epoch
+    # - Low 10 bits: clock identifier (random)
+    timestamp_us = int(time.time() * 1_000_000)
+    clock_id = int.from_bytes(uuid.uuid4().bytes[:2], 'big') & 0x3FF  # 10 bits
+
+    tid_int = (timestamp_us << 10) | clock_id
+
+    # Encode as base32 (13 characters)
+    result = []
+    for _ in range(13):
+        result.append(B32_CHARSET[tid_int & 0x1F])
+        tid_int >>= 5
+
+    return ''.join(reversed(result))
 
 
 def load_credentials(filepath: str) -> tuple[str, str]:
@@ -627,20 +650,21 @@ def publish_document(
         "$type": "pub.leaflet.document",
         "author": did,
         "title": title,
+        "tags": [],  # Required for Leaflet UI compatibility
         "description": "",
         "publication": publication_uri,
         "publishedAt": pub_date,
         "pages": [
             {
                 "$type": "pub.leaflet.pages.linearDocument",
-                "id": "page-1",
+                "id": str(uuid.uuid4()),  # UUID format for Leaflet UI compatibility
                 "blocks": leaflet_blocks,
             }
         ]
     }
 
-    # Generate a TID-like rkey
-    rkey = hex(int(time.time() * 1000000))[2:]
+    # Generate a proper TID rkey (AT Protocol format)
+    rkey = generate_tid()
 
     resp = requests.post(
         "https://bsky.social/xrpc/com.atproto.repo.putRecord",

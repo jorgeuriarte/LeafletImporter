@@ -1,0 +1,116 @@
+{
+  "scan_date": "2026-01-14T00:04:31.302152",
+  "total_links": 20,
+  "working_links": 11,
+  "broken_links": 9,
+  "broken_with_wayback": 6,
+  "details": {
+    "broken": [
+      {
+        "url": "https://twitter.com/DijkstraQuotes",
+        "post_title": "In A Society In Which The Educational System Is",
+        "post_dir": "2013-10-14-in-a-society-in-which-the-educational-system-is",
+        "post_date": "2013-10-14",
+        "target_date": "20131014",
+        "status": 403,
+        "error": null,
+        "is_broken": true,
+        "wayback_url": "http://web.archive.org/web/20130928034706/https://twitter.com/DijkstraQuotes",
+        "wayback_timestamp": "20130928034706"
+      },
+      {
+        "url": "http://twitter.com/islomar",
+        "post_title": "Partidos, programas, procesos, personas, principios...",
+        "post_dir": "2014-05-12-partidos-programas-procesos-personas",
+        "post_date": "2014-05-12",
+        "target_date": "20140512",
+        "status": 520,
+        "error": null,
+        "is_broken": true,
+        "wayback_url": null
+      },
+      {
+        "url": "http://incubator.apache.org/learn/rules-for-revolutionaries.html",
+        "post_title": "Rules For Revolutionaries In A Closed",
+        "post_dir": "2013-10-11-rules-for-revolutionaries-in-a-closed",
+        "post_date": "2013-10-11",
+        "target_date": "20131011",
+        "status": 404,
+        "error": null,
+        "is_broken": true,
+        "wayback_url": "http://web.archive.org/web/20131107145351/http://incubator.apache.org:80/learn/rules-for-revolutionaries.html",
+        "wayback_timestamp": "20131107145351"
+      },
+      {
+        "url": "http://www.gembapantarei.com/2013/09/8_more_lean_concept_clarifications.html",
+        "post_title": "Too Often We See People Fighting Over Definitions",
+        "post_dir": "2013-10-13-too-often-we-see-people-fighting-over-definitions",
+        "post_date": "2013-10-13",
+        "target_date": "20131013",
+        "status": 404,
+        "error": null,
+        "is_broken": true,
+        "wayback_url": "http://web.archive.org/web/20131019140433/http://www.gembapantarei.com:80/2013/09/8_more_lean_concept_clarifications.html",
+        "wayback_timestamp": "20131019140433"
+      },
+      {
+        "url": "http://www.runroom.com/fishbowl-week/ \"Runroom Fishbowl week\"",
+        "post_title": "Unas cervezas con Runroom, un elogio desde el corazón, y un picor incómodo",
+        "post_dir": "2013-07-01-unas-cervezas-con-runroom-un-elogio-desde-el",
+        "post_date": "2013-07-01",
+        "target_date": "20130701",
+        "status": 404,
+        "error": null,
+        "is_broken": true,
+        "wayback_url": null
+      },
+      {
+        "url": "http://twitter.com/CarlosTheSailor",
+        "post_title": "Unas cervezas con Runroom, un elogio desde el corazón, y un picor incómodo",
+        "post_dir": "2013-07-01-unas-cervezas-con-runroom-un-elogio-desde-el",
+        "post_date": "2013-07-01",
+        "target_date": "20130701",
+        "status": 520,
+        "error": null,
+        "is_broken": true,
+        "wayback_url": "http://web.archive.org/web/20130901211405/https://twitter.com/CarlosTheSailor",
+        "wayback_timestamp": "20130901211405"
+      },
+      {
+        "url": "http://jaumejornet.net/es",
+        "post_title": "Unas cervezas con Runroom, un elogio desde el corazón, y un picor incómodo",
+        "post_dir": "2013-07-01-unas-cervezas-con-runroom-un-elogio-desde-el",
+        "post_date": "2013-07-01",
+        "target_date": "20130701",
+        "status": null,
+        "error": "Connection error: HTTPConnectionPool(host='jaumejornet.net', port=80",
+        "is_broken": true,
+        "wayback_url": "http://web.archive.org/web/20130928135127/http://jaumejornet.net/es/",
+        "wayback_timestamp": "20130928135127"
+      },
+      {
+        "url": "http://twitter.com/xav1uzz",
+        "post_title": "Unas cervezas con Runroom, un elogio desde el corazón, y un picor incómodo",
+        "post_dir": "2013-07-01-unas-cervezas-con-runroom-un-elogio-desde-el",
+        "post_date": "2013-07-01",
+        "target_date": "20130701",
+        "status": 520,
+        "error": null,
+        "is_broken": true,
+        "wayback_url": "http://web.archive.org/web/20130921070415/https://twitter.com/xav1uzz",
+        "wayback_timestamp": "20130921070415"
+      },
+      {
+        "url": "http://blog.omelas.net/post/48028613917/extinciones-partidos-politicos-y-colegios \"Extinciones, partidos políticos y colegios profesionales\"",
+        "post_title": "Partidos, programas, procesos, personas, principios...",
+        "post_dir": "2014-05-12-partidos-programas-procesos-personas",
+        "post_date": "2014-05-12",
+        "target_date": "20140512",
+        "status": 404,
+        "error": null,
+        "is_broken": true,
+        "wayback_url": null
+      }
+    ]
+  }
+}
