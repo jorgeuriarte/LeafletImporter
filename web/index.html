@@ -314,6 +314,25 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 1rem;
+      list-style: none;
+    }
+
+    .preview-header::-webkit-details-marker {
+      display: none;
+    }
+
+    details.preview-section[open] .expand-hint {
+      display: none;
+    }
+
+    details.preview-section summary {
+      padding: 0.5rem;
+      border-radius: 0.5rem;
+      transition: background 0.2s;
+    }
+
+    details.preview-section summary:hover {
+      background: #f3f4f6;
     }
 
     .preview-title {
@@ -780,15 +799,16 @@
         </div>
       </div>
 
-      <div id="tumblr-preview" class="preview-section" style="display: none;">
-        <div class="preview-header">
-          <span class="preview-title">Posts preview</span>
+      <details id="tumblr-preview" class="preview-section" style="display: none;">
+        <summary class="preview-header" style="cursor: pointer; user-select: none;">
+          <span class="preview-title">✓ Connected</span>
           <span class="post-count" id="post-count">0 posts</span>
-        </div>
+          <span class="expand-hint" style="margin-left: auto; font-size: 0.8rem; color: #6b7280;">click to expand</span>
+        </summary>
         <div class="posts-grid" id="posts-grid">
           <!-- Posts will be loaded here -->
         </div>
-      </div>
+      </details>
 
       <div id="tumblr-status" class="status"></div>
     </div>
