@@ -2,23 +2,23 @@
 
 Migrate your Tumblr blog to [Leaflet.pub](https://leaflet.pub).
 
-## Why would I want to migrate to Leaflet.pub?
+## Why migrate to Leaflet.pub?
 
-Tumblr fue genial, pero lleva años en declive. Cambios de dueño, incertidumbre sobre su futuro, y cada vez menos desarrollo. Tu contenido está atrapado en una plataforma que no controlas.
+Tumblr was great, but it's been in decline for years. Ownership changes, uncertain future, less and less development. Your content is trapped in a platform you don't control.
 
-Leaflet es diferente: está construido sobre [AT Protocol](https://atproto.com/) (el protocolo de Bluesky). Esto significa que tus posts viven en tu PDS personal—el mismo sitio donde viven tus datos de Bluesky. Si Leaflet desaparece mañana, tus datos siguen siendo tuyos.
+Leaflet is different: it's built on [AT Protocol](https://atproto.com/) (the protocol behind Bluesky). Your posts live on your personal PDS—the same place your Bluesky data lives. If Leaflet disappears tomorrow, your data is still yours.
 
-Además:
-- **Sin lock-in.** Tus posts son portables.
-- **Social de verdad.** Tus lectores te siguen desde Bluesky o RSS.
-- **Dominio propio** si quieres.
-- **Comentarios y descubrimiento** a través del grafo social de Bluesky.
+Also:
+- **No lock-in.** Your posts are portable.
+- **Actually social.** Readers follow you via Bluesky or RSS.
+- **Custom domain** if you want.
+- **Comments and discovery** through Bluesky's social graph.
 
-Más info en [about.leaflet.pub](https://about.leaflet.pub/).
+More at [about.leaflet.pub](https://about.leaflet.pub/).
 
 ## The Tool
 
-A browser-based migrator. No installs, no servers, your credentials never leave your browser.
+A browser-based migrator. No installs, no backend—your credentials never leave your browser.
 
 **Live:** [leafletimporter.pages.dev](https://leafletimporter.pages.dev/)
 
@@ -29,20 +29,45 @@ A browser-based migrator. No installs, no servers, your credentials never leave 
 3. Select your Leaflet publication
 4. Migrate
 
-The tool fetches your Tumblr RSS, converts posts to Leaflet format (preserving formatting, images, links), and publishes them via AT Protocol.
+The tool fetches your Tumblr RSS, converts posts to Leaflet format (preserving formatting, images, links), and publishes via AT Protocol.
 
 ### Features
 
 - **Batch migration** with progress tracking
 - **Preserves formatting:** headers, code blocks, lists, quotes, links
-- **Uploads images** as blobs (not just links)
+- **Uploads images** as blobs (embedded, not external links)
 - **Pause/resume** if you need to step away
 
 ### Safe to re-import
 
-Each Tumblr post generates a unique identifier based on its URL. If you run the migration again, existing posts get updated instead of duplicated. Useful if you add new posts to your Tumblr or want to fix something.
+Each Tumblr post generates a unique identifier based on its URL. Running the migration again updates existing posts instead of duplicating them. Useful if you add new posts to Tumblr or want to fix something.
 
-### Local development
+## Architecture
+
+```
+┌──────────────────────────────────────┐
+│  Your Browser                        │
+│  leafletimporter.pages.dev           │
+└──────────────┬───────────────────────┘
+               │
+    ┌──────────┴──────────┐
+    │                     │
+    ▼                     ▼
+┌─────────────┐    ┌─────────────────┐
+│ CORS Proxy  │    │ Bluesky/AT API  │
+│ (Worker)    │    │ bsky.social     │
+└──────┬──────┘    └─────────────────┘
+       │                    ▲
+       ▼                    │
+┌─────────────┐      Credentials stay
+│ Tumblr RSS  │      in your browser
+│ & Images    │
+└─────────────┘
+```
+
+The CORS proxy (a Cloudflare Worker) is needed because browsers block direct requests to Tumblr. It just passes data through—no credentials, no storage.
+
+## Local development
 
 ```bash
 # Start local server + worker proxy
@@ -51,11 +76,11 @@ Each Tumblr post generates a unique identifier based on its URL. If you run the 
 # Open http://localhost:8080
 ```
 
-Requires the Cloudflare Worker for CORS proxying of Tumblr feeds. See `web/worker.js`.
+The app auto-detects local vs production and uses the appropriate proxy URL.
 
-## Also included
+## Python CLI (alternative)
 
-Python CLI tools for more control:
+For more control or batch processing from exports:
 
 ```bash
 source venv/bin/activate
