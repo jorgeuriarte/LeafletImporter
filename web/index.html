@@ -2392,10 +2392,32 @@
     }
 
     /**
+     * Remove known ad network code that was commonly injected in old blog posts.
+     * Only removes specific patterns (Google AdSense, etc.) to avoid
+     * accidentally stripping legitimate code examples.
+     */
+    function cleanAdNetworkCode(html) {
+      const adPatterns = [
+        /google_ad_\w+\s*=\s*[^;]+;/g,
+        /google_color_\w+\s*=\s*[^;]+;/g,
+        /google_ui_\w+\s*=\s*[^;]+;/g,
+      ];
+
+      for (const pattern of adPatterns) {
+        html = html.replace(pattern, '');
+      }
+
+      return html;
+    }
+
+    /**
      * Parse HTML content and convert to Leaflet block structures.
      * This is the main function that handles all block types and inline formatting.
      */
     function parseHtmlToLeafletBlocks(html) {
+      // Clean up legacy ad network code before parsing
+      html = cleanAdNetworkCode(html);
+
       const parser = new DOMParser();
       const doc = parser.parseFromString(`<div>${html}</div>`, 'text/html');
       const container = doc.body.firstChild;
