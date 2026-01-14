@@ -2360,16 +2360,23 @@
 
           // Blockquotes
           case 'blockquote': {
-            const { plaintext, facets } = extractInlineFormatting(element);
-            if (plaintext) {
-              blocks.push({
-                "$type": "pub.leaflet.pages.linearDocument#block",
-                "block": {
-                  "$type": "pub.leaflet.blocks.blockquote",
-                  "plaintext": plaintext,
-                  "facets": facets
-                }
-              });
+            // Process children of blockquote recursively (Tumblr reblogs have nested content)
+            for (const child of element.children) {
+              processElement(child);
+            }
+            // If no block children, treat as text blockquote
+            if (element.children.length === 0 && element.textContent.trim()) {
+              const { plaintext, facets } = extractInlineFormatting(element);
+              if (plaintext) {
+                blocks.push({
+                  "$type": "pub.leaflet.pages.linearDocument#block",
+                  "block": {
+                    "$type": "pub.leaflet.blocks.blockquote",
+                    "plaintext": plaintext,
+                    "facets": facets
+                  }
+                });
+              }
             }
             break;
           }
