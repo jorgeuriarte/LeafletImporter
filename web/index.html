@@ -1093,23 +1093,38 @@
           }],
         };
 
+        console.log('Creating record with:', { collection: 'pub.leaflet.document', rkey, record });
         const result = await createRecord(session, 'pub.leaflet.document', rkey, record);
+        console.log('Create result:', result);
 
         state.testPostUri = result.uri;
         state.testPostRkey = rkey;
 
-        // Build Leaflet URL
-        const leafletUrl = `https://leaflet.pub/d/${session.did}/${rkey}`;
+        // Build Leaflet URL - documents are viewed within the publication
+        // Format: https://leaflet.pub/lish/{did}/{publication_rkey}/{document_rkey}
+        const leafletUrl = `https://leaflet.pub/lish/${session.did}/${publication.rkey}/${rkey}`;
+
+        // Also show publication home to see if it appears there
+        const publicationUrl = `https://leaflet.pub/lish/${session.did}/${publication.rkey}`;
 
         elements.testPostUrl.href = leafletUrl;
-        elements.testPostUrl.textContent = leafletUrl;
+        elements.testPostUrl.innerHTML = `
+          <a href="${leafletUrl}" target="_blank">${leafletUrl}</a><br>
+          <small style="color: #6b7280;">Publicacion: <a href="${publicationUrl}" target="_blank">${publicationUrl}</a></small>
+        `;
         elements.testResult.classList.add('visible');
 
         elements.step2Indicator.classList.add('done');
         elements.step2Indicator.textContent = '✓';
         elements.btnStartImport.disabled = false;
 
-        showStatus(elements.testStatus, 'success', 'Conexion exitosa! El post de prueba ha sido creado.');
+        showStatus(elements.testStatus, 'success', `
+          Post creado!<br>
+          <small style="font-family: monospace; word-break: break-all;">
+            URI: ${result.uri}<br>
+            CID: ${result.cid}
+          </small>
+        `);
 
       } catch (error) {
         showStatus(elements.testStatus, 'error', `Error: ${error.message}`);
