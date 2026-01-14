@@ -452,6 +452,130 @@
       margin-top: 1rem;
     }
 
+    /* Migration progress */
+    .migration-progress {
+      display: none;
+      margin-top: 1.5rem;
+      padding: 1.5rem;
+      background: #f9fafb;
+      border-radius: 12px;
+      border: 1px solid #e5e7eb;
+    }
+
+    .migration-progress.visible {
+      display: block;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .progress-title {
+      font-weight: 600;
+      font-size: 1.1rem;
+    }
+
+    .progress-stats {
+      font-size: 0.9rem;
+      color: var(--text-light);
+    }
+
+    .progress-bar-container {
+      background: #e5e7eb;
+      border-radius: 8px;
+      height: 12px;
+      overflow: hidden;
+      margin-bottom: 1rem;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: var(--primary);
+      border-radius: 8px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+
+    .progress-bar.complete {
+      background: var(--success);
+    }
+
+    .progress-bar.error {
+      background: var(--danger);
+    }
+
+    .progress-log {
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 0.85rem;
+      font-family: monospace;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 0.75rem;
+    }
+
+    .progress-log-entry {
+      padding: 0.25rem 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+
+    .progress-log-entry:last-child {
+      border-bottom: none;
+    }
+
+    .progress-log-entry.success {
+      color: #059669;
+    }
+
+    .progress-log-entry.error {
+      color: #dc2626;
+    }
+
+    .progress-log-entry.info {
+      color: #6b7280;
+    }
+
+    .migration-controls {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+
+    .migration-summary {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      border-radius: 8px;
+      display: none;
+    }
+
+    .migration-summary.visible {
+      display: block;
+    }
+
+    .migration-summary.has-errors {
+      background: #fef3c7;
+      border-color: #fcd34d;
+    }
+
+    .migration-summary h4 {
+      margin-bottom: 0.5rem;
+    }
+
+    .migration-summary ul {
+      margin: 0;
+      padding-left: 1.25rem;
+    }
+
+    .migration-summary li {
+      margin-bottom: 0.25rem;
+    }
+
     /* Parsed info display */
     .parsed-info {
       margin-top: 0.5rem;
@@ -653,6 +777,32 @@
       <button class="btn btn-success" id="btn-start-import" disabled>
         &#x1F680; Start migration
       </button>
+
+      <!-- Migration Progress -->
+      <div id="migration-progress" class="migration-progress">
+        <div class="progress-header">
+          <span class="progress-title" id="progress-title">Migrating posts...</span>
+          <span class="progress-stats" id="progress-stats">0 / 0</span>
+        </div>
+        <div class="progress-bar-container">
+          <div class="progress-bar" id="progress-bar"></div>
+        </div>
+        <div class="progress-log" id="progress-log">
+          <!-- Log entries will appear here -->
+        </div>
+        <div class="migration-controls" id="migration-controls">
+          <button class="btn btn-secondary" id="btn-pause-import">
+            &#x23F8; Pause
+          </button>
+          <button class="btn btn-danger" id="btn-cancel-import">
+            &#x2716; Cancel
+          </button>
+        </div>
+        <div class="migration-summary" id="migration-summary">
+          <h4 id="summary-title">Migration Complete</h4>
+          <ul id="summary-list"></ul>
+        </div>
+      </div>
     </div>
 
     <!-- Footer -->
@@ -713,6 +863,13 @@
       bskySession: null,
       testPostUri: null,
       testPostRkey: null,
+      // Migration state
+      migrationInProgress: false,
+      migrationPaused: false,
+      migrationCancelled: false,
+      migratedPosts: [],
+      failedPosts: [],
+      currentPostIndex: 0,
     };
 
     // ============================================
@@ -742,6 +899,19 @@
       btnDeleteTest: $('btn-delete-test'),
       testStatus: $('test-status'),
       btnStartImport: $('btn-start-import'),
+
+      // Migration progress elements
+      migrationProgress: $('migration-progress'),
+      progressTitle: $('progress-title'),
+      progressStats: $('progress-stats'),
+      progressBar: $('progress-bar'),
+      progressLog: $('progress-log'),
+      migrationControls: $('migration-controls'),
+      btnPauseImport: $('btn-pause-import'),
+      btnCancelImport: $('btn-cancel-import'),
+      migrationSummary: $('migration-summary'),
+      summaryTitle: $('summary-title'),
+      summaryList: $('summary-list'),
 
       btnHelpPassword: $('btn-help-password'),
       modalPassword: $('modal-password'),
@@ -912,12 +1082,20 @@
         total_posts: items.length,
       };
 
-      const posts = Array.from(items).map(item => ({
-        id: item.querySelector('guid')?.textContent || '',
-        title: item.querySelector('title')?.textContent || 'Untitled',
-        date: item.querySelector('pubDate')?.textContent || '',
-        summary: item.querySelector('description')?.textContent?.slice(0, 200) || '',
-      }));
+      const posts = Array.from(items).map(item => {
+        const fullContent = item.querySelector('description')?.textContent || '';
+        return {
+          id: item.querySelector('guid')?.textContent || '',
+          title: item.querySelector('title')?.textContent || 'Untitled',
+          date: item.querySelector('pubDate')?.textContent || '',
+          // Keep full content for migration
+          content: fullContent,
+          // Truncated summary for preview display
+          summary: fullContent.slice(0, 200),
+          // Original Tumblr URL
+          link: item.querySelector('link')?.textContent || '',
+        };
+      });
 
       return { blog, posts };
     }
@@ -1259,9 +1437,282 @@
       }
     });
 
-    // Start import (placeholder)
-    elements.btnStartImport.addEventListener('click', () => {
-      showStatus(elements.testStatus, 'info', 'Full import functionality coming soon!');
+    // ============================================
+    // Migration Functions
+    // ============================================
+
+    function addLogEntry(message, type = 'info') {
+      const entry = document.createElement('div');
+      entry.className = `progress-log-entry ${type}`;
+      entry.textContent = message;
+      elements.progressLog.appendChild(entry);
+      // Auto-scroll to bottom
+      elements.progressLog.scrollTop = elements.progressLog.scrollHeight;
+    }
+
+    function updateProgress(current, total) {
+      const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
+      elements.progressBar.style.width = `${percentage}%`;
+      elements.progressStats.textContent = `${current} / ${total}`;
+    }
+
+    function resetMigrationState() {
+      state.migrationInProgress = false;
+      state.migrationPaused = false;
+      state.migrationCancelled = false;
+      state.migratedPosts = [];
+      state.failedPosts = [];
+      state.currentPostIndex = 0;
+    }
+
+    async function convertTumblrPostToLeafletDocument(post, session, publication) {
+      const rkey = generateTid();
+      const now = new Date().toISOString();
+
+      // Parse the original post date if available
+      let publishedAt = now;
+      if (post.date) {
+        try {
+          const parsedDate = new Date(post.date);
+          if (!isNaN(parsedDate.getTime())) {
+            publishedAt = parsedDate.toISOString();
+          }
+        } catch (e) {
+          // Use current date if parsing fails
+        }
+      }
+
+      const title = post.title || 'Untitled Post';
+
+      // Parse HTML content to Leaflet blocks with proper formatting
+      const htmlContent = post.content || post.summary || '';
+      let blocks = parseHtmlToLeafletBlocks(htmlContent);
+
+      // Process any pending image blocks (upload blobs)
+      blocks = await processImageBlocks(session, blocks);
+
+      // If no blocks were parsed, add a placeholder
+      if (blocks.length === 0) {
+        blocks.push({
+          "$type": "pub.leaflet.pages.linearDocument#block",
+          "block": {
+            "$type": "pub.leaflet.blocks.text",
+            "plaintext": "(Imported from Tumblr)",
+            "facets": [],
+          }
+        });
+      }
+
+      // Get plain text for description (strip HTML for the description field)
+      const plainContent = stripHtml(htmlContent);
+
+      const record = {
+        "$type": "pub.leaflet.document",
+        "author": session.did,
+        "title": title,
+        "tags": ["tumblr-import"],
+        "description": plainContent.slice(0, 300),
+        "publication": publication.uri,
+        "publishedAt": publishedAt,
+        "pages": [{
+          "$type": "pub.leaflet.pages.linearDocument",
+          "id": generateUuid(),
+          "blocks": blocks,
+        }],
+      };
+
+      return { rkey, record };
+    }
+
+    async function migratePost(post, session, publication) {
+      const { rkey, record } = await convertTumblrPostToLeafletDocument(post, session, publication);
+
+      const result = await createRecord(session, 'pub.leaflet.document', rkey, record);
+
+      return {
+        originalPost: post,
+        rkey: rkey,
+        uri: result.uri,
+        cid: result.cid,
+        leafletUrl: `https://leaflet.pub/lish/${session.did}/${publication.rkey}/${rkey}`,
+      };
+    }
+
+    async function runMigration() {
+      const posts = state.tumblrPosts;
+      const session = state.bskySession;
+      const publication = state.leafletPublication;
+      const total = posts.length;
+
+      for (let i = state.currentPostIndex; i < total; i++) {
+        // Check if cancelled
+        if (state.migrationCancelled) {
+          addLogEntry('Migration cancelled by user.', 'error');
+          break;
+        }
+
+        // Check if paused
+        while (state.migrationPaused && !state.migrationCancelled) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        if (state.migrationCancelled) {
+          addLogEntry('Migration cancelled by user.', 'error');
+          break;
+        }
+
+        const post = posts[i];
+        state.currentPostIndex = i;
+
+        try {
+          const title = post.title || 'Untitled Post';
+          addLogEntry(`Migrating: "${title.slice(0, 50)}${title.length > 50 ? '...' : ''}"`, 'info');
+
+          const result = await migratePost(post, session, publication);
+          state.migratedPosts.push(result);
+
+          addLogEntry(`Success: "${title.slice(0, 40)}${title.length > 40 ? '...' : ''}"`, 'success');
+
+          // Add a small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+        } catch (error) {
+          const title = post.title || 'Untitled Post';
+          addLogEntry(`Failed: "${title.slice(0, 40)}..." - ${error.message}`, 'error');
+          state.failedPosts.push({ post, error: error.message });
+        }
+
+        updateProgress(i + 1, total);
+      }
+
+      // Migration complete
+      state.migrationInProgress = false;
+      finishMigration();
+    }
+
+    function finishMigration() {
+      const success = state.migratedPosts.length;
+      const failed = state.failedPosts.length;
+      const cancelled = state.migrationCancelled;
+      const total = state.tumblrPosts.length;
+
+      // Update progress bar style
+      if (failed > 0) {
+        elements.progressBar.classList.add('error');
+      } else if (!cancelled) {
+        elements.progressBar.classList.add('complete');
+      }
+
+      // Hide controls
+      elements.migrationControls.style.display = 'none';
+
+      // Show summary
+      let summaryHtml = '';
+      if (cancelled) {
+        elements.summaryTitle.textContent = 'Migration Cancelled';
+        summaryHtml += `<li>Migrated ${success} of ${total} posts before cancellation</li>`;
+      } else {
+        elements.summaryTitle.textContent = failed > 0 ? 'Migration Completed with Errors' : 'Migration Complete!';
+        summaryHtml += `<li>Successfully migrated: ${success} posts</li>`;
+      }
+
+      if (failed > 0) {
+        summaryHtml += `<li>Failed: ${failed} posts</li>`;
+        elements.migrationSummary.classList.add('has-errors');
+      }
+
+      if (success > 0 && state.leafletPublication) {
+        const pubUrl = `https://leaflet.pub/lish/${state.bskySession.did}/${state.leafletPublication.rkey}`;
+        summaryHtml += `<li><a href="${pubUrl}" target="_blank">View your publication</a></li>`;
+      }
+
+      elements.summaryList.innerHTML = summaryHtml;
+      elements.migrationSummary.classList.add('visible');
+
+      // Update title
+      if (cancelled) {
+        elements.progressTitle.textContent = 'Migration Cancelled';
+      } else if (failed > 0) {
+        elements.progressTitle.textContent = 'Migration Completed with Errors';
+      } else {
+        elements.progressTitle.textContent = 'Migration Complete!';
+      }
+
+      // Re-enable start button for retry
+      elements.btnStartImport.disabled = false;
+      elements.btnStartImport.innerHTML = '&#x1F504; Restart migration';
+    }
+
+    // Start migration
+    elements.btnStartImport.addEventListener('click', async () => {
+      // Validate prerequisites
+      if (!state.tumblrPosts || state.tumblrPosts.length === 0) {
+        showStatus(elements.testStatus, 'error', 'No posts to migrate. First validate your Tumblr blog URL.');
+        return;
+      }
+
+      if (!state.bskySession) {
+        showStatus(elements.testStatus, 'error', 'Not authenticated. First validate your credentials.');
+        return;
+      }
+
+      const leafletUri = elements.leafletUrl.value.trim();
+      const publication = parseLeafletUri(leafletUri);
+      if (!publication) {
+        showStatus(elements.testStatus, 'error', 'Invalid Leaflet URL. Enter a valid publication URL.');
+        return;
+      }
+      state.leafletPublication = publication;
+
+      // Reset state for fresh migration
+      resetMigrationState();
+
+      // Hide any previous status
+      hideStatus(elements.testStatus);
+
+      // Show progress UI
+      elements.migrationProgress.classList.add('visible');
+      elements.progressLog.innerHTML = '';
+      elements.progressBar.style.width = '0%';
+      elements.progressBar.classList.remove('complete', 'error');
+      elements.migrationControls.style.display = 'flex';
+      elements.migrationSummary.classList.remove('visible', 'has-errors');
+      elements.progressTitle.textContent = 'Migrating posts...';
+      elements.btnPauseImport.innerHTML = '&#x23F8; Pause';
+
+      // Disable start button during migration
+      elements.btnStartImport.disabled = true;
+
+      // Start migration
+      state.migrationInProgress = true;
+      const total = state.tumblrPosts.length;
+      addLogEntry(`Starting migration of ${total} posts...`, 'info');
+      updateProgress(0, total);
+
+      await runMigration();
+    });
+
+    // Pause/Resume migration
+    elements.btnPauseImport.addEventListener('click', () => {
+      if (state.migrationPaused) {
+        state.migrationPaused = false;
+        elements.btnPauseImport.innerHTML = '&#x23F8; Pause';
+        elements.progressTitle.textContent = 'Migrating posts...';
+        addLogEntry('Migration resumed.', 'info');
+      } else {
+        state.migrationPaused = true;
+        elements.btnPauseImport.innerHTML = '&#x25B6; Resume';
+        elements.progressTitle.textContent = 'Migration Paused';
+        addLogEntry('Migration paused.', 'info');
+      }
+    });
+
+    // Cancel migration
+    elements.btnCancelImport.addEventListener('click', () => {
+      if (confirm('Are you sure you want to cancel the migration? Posts already migrated will remain on Leaflet.')) {
+        state.migrationCancelled = true;
+        state.migrationPaused = false; // Unpause to let the loop finish
+      }
     });
 
     // ============================================
@@ -1277,6 +1728,627 @@
       const div = document.createElement('div');
       div.innerHTML = html;
       return div.textContent || div.innerText || '';
+    }
+
+    // ============================================
+    // Image Blob Upload Functions
+    // ============================================
+
+    /**
+     * Upload an image blob to AT-Proto.
+     * @param {object} session - The authenticated session
+     * @param {ArrayBuffer} imageData - The raw image data
+     * @param {string} mimeType - The MIME type of the image
+     * @returns {Promise<object>} - The blob reference from the API
+     */
+    async function uploadBlob(session, imageData, mimeType) {
+      const response = await fetch(`${BSKY_API}/com.atproto.repo.uploadBlob`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.accessJwt}`,
+          'Content-Type': mimeType,
+        },
+        body: imageData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Upload failed' }));
+        throw new Error(error.message || `Blob upload failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      return result.blob;
+    }
+
+    /**
+     * Get image dimensions from image data (PNG or JPEG).
+     * @param {ArrayBuffer} arrayBuffer - The raw image data
+     * @returns {{width: number, height: number}} - The image dimensions
+     */
+    function getImageDimensions(arrayBuffer) {
+      const data = new Uint8Array(arrayBuffer);
+
+      try {
+        // PNG: bytes 16-24 contain width/height as 4-byte big-endian
+        if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4E && data[3] === 0x47) {
+          const width = (data[16] << 24) | (data[17] << 16) | (data[18] << 8) | data[19];
+          const height = (data[20] << 24) | (data[21] << 16) | (data[22] << 8) | data[23];
+          return { width, height };
+        }
+
+        // JPEG: look for SOF markers
+        if (data[0] === 0xFF && data[1] === 0xD8) {
+          let i = 2;
+          while (i < data.length - 8) {
+            if (data[i] === 0xFF) {
+              const marker = data[i + 1];
+              // SOF0, SOF1, SOF2 markers contain dimensions
+              if (marker === 0xC0 || marker === 0xC1 || marker === 0xC2) {
+                const height = (data[i + 5] << 8) | data[i + 6];
+                const width = (data[i + 7] << 8) | data[i + 8];
+                return { width, height };
+              }
+              // Skip to next marker
+              const length = (data[i + 2] << 8) | data[i + 3];
+              i += 2 + length;
+            } else {
+              i++;
+            }
+          }
+        }
+
+        // GIF: bytes 6-10 contain width/height as little-endian 16-bit
+        if (data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46) {
+          const width = data[6] | (data[7] << 8);
+          const height = data[8] | (data[9] << 8);
+          return { width, height };
+        }
+
+        // WebP: more complex, check for VP8 chunk
+        if (data[0] === 0x52 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x46 &&
+            data[8] === 0x57 && data[9] === 0x45 && data[10] === 0x42 && data[11] === 0x50) {
+          // Simple VP8 (lossy)
+          if (data[12] === 0x56 && data[13] === 0x50 && data[14] === 0x38 && data[15] === 0x20) {
+            const width = ((data[26] | (data[27] << 8)) & 0x3FFF);
+            const height = ((data[28] | (data[29] << 8)) & 0x3FFF);
+            return { width, height };
+          }
+          // VP8L (lossless)
+          if (data[12] === 0x56 && data[13] === 0x50 && data[14] === 0x38 && data[15] === 0x4C) {
+            const bits = data[21] | (data[22] << 8) | (data[23] << 16) | (data[24] << 24);
+            const width = (bits & 0x3FFF) + 1;
+            const height = ((bits >> 14) & 0x3FFF) + 1;
+            return { width, height };
+          }
+        }
+      } catch (e) {
+        // Fall through to default
+      }
+
+      // Default fallback
+      return { width: 800, height: 600 };
+    }
+
+    /**
+     * Determine MIME type from URL and/or magic bytes.
+     * @param {string} url - The image URL
+     * @param {ArrayBuffer} arrayBuffer - The raw image data
+     * @returns {string} - The MIME type
+     */
+    function getMimeType(url, arrayBuffer) {
+      const urlLower = url.toLowerCase();
+
+      // Check URL extension first
+      if (urlLower.includes('.png')) return 'image/png';
+      if (urlLower.includes('.gif')) return 'image/gif';
+      if (urlLower.includes('.webp')) return 'image/webp';
+      if (urlLower.includes('.jpg') || urlLower.includes('.jpeg')) return 'image/jpeg';
+
+      // Check magic bytes
+      const data = new Uint8Array(arrayBuffer.slice(0, 12));
+
+      // PNG: 89 50 4E 47
+      if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4E && data[3] === 0x47) {
+        return 'image/png';
+      }
+
+      // GIF: 47 49 46
+      if (data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46) {
+        return 'image/gif';
+      }
+
+      // WebP: RIFF....WEBP
+      if (data[0] === 0x52 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x46 &&
+          data[8] === 0x57 && data[9] === 0x45 && data[10] === 0x42 && data[11] === 0x50) {
+        return 'image/webp';
+      }
+
+      // JPEG: FF D8
+      if (data[0] === 0xFF && data[1] === 0xD8) {
+        return 'image/jpeg';
+      }
+
+      // Default to JPEG
+      return 'image/jpeg';
+    }
+
+    /**
+     * Fetch an image and return as ArrayBuffer.
+     * Tries direct fetch first, falls back to proxy if CORS fails.
+     * @param {string} imageUrl - The URL of the image to fetch
+     * @returns {Promise<ArrayBuffer|null>} - The image data or null if failed
+     */
+    async function fetchImageAsBlob(imageUrl) {
+      // Skip data URLs - they're already embedded
+      if (imageUrl.startsWith('data:')) {
+        try {
+          const response = await fetch(imageUrl);
+          return await response.arrayBuffer();
+        } catch (e) {
+          console.warn('Failed to decode data URL:', e);
+          return null;
+        }
+      }
+
+      // Try direct fetch first
+      try {
+        const response = await fetch(imageUrl, {
+          mode: 'cors',
+          headers: {
+            'Accept': 'image/webp,image/png,image/jpeg,image/gif,*/*',
+          },
+        });
+
+        if (response.ok) {
+          return await response.arrayBuffer();
+        }
+      } catch (e) {
+        // CORS error or network error, try proxy
+      }
+
+      // Try via proxy (for Tumblr images)
+      try {
+        const proxyUrl = `${TUMBLR_PROXY_URL}?url=${encodeURIComponent(imageUrl)}`;
+        const response = await fetch(proxyUrl);
+
+        if (response.ok) {
+          return await response.arrayBuffer();
+        }
+      } catch (e) {
+        console.warn('Failed to fetch image via proxy:', imageUrl, e);
+      }
+
+      return null;
+    }
+
+    /**
+     * Process pending image blocks by uploading them as blobs.
+     * @param {object} session - The authenticated session
+     * @param {Array} blocks - The array of Leaflet blocks
+     * @returns {Promise<Array>} - The processed blocks with uploaded images
+     */
+    async function processImageBlocks(session, blocks) {
+      const processedBlocks = [];
+      const MAX_IMAGE_SIZE = 1000000; // 1MB limit for AT Protocol
+
+      for (const blockWrapper of blocks) {
+        const block = blockWrapper.block;
+
+        // Check if this is a pending image block
+        if (block && block.$type === 'pub.leaflet.blocks.image' && block._pendingUrl) {
+          const url = block._pendingUrl;
+          const alt = block._alt || '';
+
+          try {
+            // Fetch the image
+            const imageData = await fetchImageAsBlob(url);
+
+            if (!imageData) {
+              console.warn('Could not fetch image:', url);
+              // Skip this image block entirely
+              continue;
+            }
+
+            // Check size limit
+            if (imageData.byteLength > MAX_IMAGE_SIZE) {
+              console.warn('Image too large, skipping:', url, imageData.byteLength);
+              continue;
+            }
+
+            // Get MIME type and dimensions
+            const mimeType = getMimeType(url, imageData);
+            const dimensions = getImageDimensions(imageData);
+
+            // Upload the blob
+            const blobRef = await uploadBlob(session, imageData, mimeType);
+
+            // Create the proper image block
+            processedBlocks.push({
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.image",
+                "image": blobRef,
+                "alt": alt,
+                "aspectRatio": {
+                  "width": dimensions.width,
+                  "height": dimensions.height,
+                }
+              }
+            });
+
+          } catch (e) {
+            console.error('Failed to process image:', url, e);
+            // Skip failed images
+            continue;
+          }
+        } else {
+          // Not an image block or not pending, keep as-is
+          processedBlocks.push(blockWrapper);
+        }
+      }
+
+      return processedBlocks;
+    }
+
+    // ============================================
+    // HTML to Leaflet Blocks Parser
+    // ============================================
+
+    /**
+     * Extract inline formatting from an element and return plaintext + facets.
+     * Facets use byte positions (UTF-8) like AT Protocol requires.
+     */
+    function extractInlineFormatting(element) {
+      let plaintext = '';
+      const facets = [];
+
+      function processNode(node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          plaintext += node.textContent;
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+          const tagName = node.tagName.toLowerCase();
+          const startChar = plaintext.length;
+
+          // Process children first to get the content
+          for (const child of node.childNodes) {
+            processNode(child);
+          }
+
+          const endChar = plaintext.length;
+
+          // Only add facet if there's actual content
+          if (endChar > startChar) {
+            let featureType = null;
+            let extraData = {};
+
+            switch (tagName) {
+              case 'strong':
+              case 'b':
+                featureType = 'bold';
+                break;
+              case 'em':
+              case 'i':
+                featureType = 'italic';
+                break;
+              case 's':
+              case 'strike':
+              case 'del':
+                featureType = 'strikethrough';
+                break;
+              case 'code':
+                featureType = 'code';
+                break;
+              case 'a':
+                featureType = 'link';
+                extraData.uri = node.getAttribute('href') || '';
+                break;
+              case 'u':
+                featureType = 'underline';
+                break;
+            }
+
+            if (featureType) {
+              // Convert character positions to byte positions
+              const byteStart = new TextEncoder().encode(plaintext.slice(0, startChar)).length;
+              const byteEnd = new TextEncoder().encode(plaintext.slice(0, endChar)).length;
+
+              const feature = { "$type": `pub.leaflet.richtext.facet#${featureType}` };
+              if (featureType === 'link' && extraData.uri) {
+                feature.uri = extraData.uri;
+              }
+
+              facets.push({
+                index: { byteStart, byteEnd },
+                features: [feature]
+              });
+            }
+          }
+        }
+      }
+
+      // Process all child nodes
+      for (const child of element.childNodes) {
+        processNode(child);
+      }
+
+      return { plaintext: plaintext.trim(), facets };
+    }
+
+    /**
+     * Convert an image element to a pending image block.
+     * The image will be uploaded as a blob later by processImageBlocks.
+     */
+    function convertImageToBlock(imgElement) {
+      const src = imgElement.getAttribute('src') || '';
+      const alt = imgElement.getAttribute('alt') || '';
+
+      // Mark as pending - will be processed later to upload the actual blob
+      return {
+        "$type": "pub.leaflet.pages.linearDocument#block",
+        "block": {
+          "$type": "pub.leaflet.blocks.image",
+          "_pendingUrl": src,
+          "_alt": alt,
+        }
+      };
+    }
+
+    /**
+     * Convert a list element (ul/ol) to Leaflet list block.
+     */
+    function convertListToBlock(listElement, isOrdered) {
+      const items = listElement.querySelectorAll(':scope > li');
+      const children = [];
+
+      for (const item of items) {
+        const { plaintext, facets } = extractInlineFormatting(item);
+        children.push({
+          content: {
+            "$type": "pub.leaflet.blocks.text",
+            "plaintext": plaintext,
+            "facets": facets
+          }
+        });
+      }
+
+      const blockType = isOrdered ? "pub.leaflet.blocks.orderedList" : "pub.leaflet.blocks.unorderedList";
+
+      return {
+        "$type": "pub.leaflet.pages.linearDocument#block",
+        "block": {
+          "$type": blockType,
+          "children": children
+        }
+      };
+    }
+
+    /**
+     * Parse HTML content and convert to Leaflet block structures.
+     * This is the main function that handles all block types and inline formatting.
+     */
+    function parseHtmlToLeafletBlocks(html) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${html}</div>`, 'text/html');
+      const container = doc.body.firstChild;
+      const blocks = [];
+
+      /**
+       * Process a single element and add to blocks array
+       */
+      function processElement(element) {
+        const tagName = element.tagName?.toLowerCase();
+
+        if (!tagName) return;
+
+        switch (tagName) {
+          // Headers
+          case 'h1':
+          case 'h2':
+          case 'h3':
+          case 'h4':
+          case 'h5':
+          case 'h6': {
+            const level = parseInt(tagName[1]);
+            const { plaintext, facets } = extractInlineFormatting(element);
+            if (plaintext) {
+              blocks.push({
+                "$type": "pub.leaflet.pages.linearDocument#block",
+                "block": {
+                  "$type": "pub.leaflet.blocks.header",
+                  "plaintext": plaintext,
+                  "level": level,
+                  "facets": facets
+                }
+              });
+            }
+            break;
+          }
+
+          // Paragraphs
+          case 'p': {
+            // Check if it only contains an image
+            const img = element.querySelector('img');
+            if (img && element.childNodes.length === 1) {
+              blocks.push(convertImageToBlock(img));
+            } else {
+              const { plaintext, facets } = extractInlineFormatting(element);
+              if (plaintext) {
+                blocks.push({
+                  "$type": "pub.leaflet.pages.linearDocument#block",
+                  "block": {
+                    "$type": "pub.leaflet.blocks.text",
+                    "plaintext": plaintext,
+                    "facets": facets
+                  }
+                });
+              }
+            }
+            break;
+          }
+
+          // Code blocks
+          case 'pre': {
+            const codeElement = element.querySelector('code');
+            const codeText = codeElement ? codeElement.textContent : element.textContent;
+            // Try to extract language from class (e.g., "language-javascript")
+            let language = null;
+            if (codeElement) {
+              const langClass = Array.from(codeElement.classList).find(c => c.startsWith('language-'));
+              if (langClass) {
+                language = langClass.replace('language-', '');
+              }
+            }
+
+            const block = {
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.code",
+                "plaintext": codeText.trim()
+              }
+            };
+
+            if (language) {
+              block.block.language = language;
+            }
+
+            blocks.push(block);
+            break;
+          }
+
+          // Blockquotes
+          case 'blockquote': {
+            const { plaintext, facets } = extractInlineFormatting(element);
+            if (plaintext) {
+              blocks.push({
+                "$type": "pub.leaflet.pages.linearDocument#block",
+                "block": {
+                  "$type": "pub.leaflet.blocks.blockquote",
+                  "plaintext": plaintext,
+                  "facets": facets
+                }
+              });
+            }
+            break;
+          }
+
+          // Unordered lists
+          case 'ul': {
+            blocks.push(convertListToBlock(element, false));
+            break;
+          }
+
+          // Ordered lists
+          case 'ol': {
+            blocks.push(convertListToBlock(element, true));
+            break;
+          }
+
+          // Horizontal rules
+          case 'hr': {
+            blocks.push({
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.horizontalRule"
+              }
+            });
+            break;
+          }
+
+          // Images (standalone)
+          case 'img': {
+            blocks.push(convertImageToBlock(element));
+            break;
+          }
+
+          // Divs and other containers - process children
+          case 'div':
+          case 'section':
+          case 'article':
+          case 'main':
+          case 'aside':
+          case 'figure': {
+            for (const child of element.children) {
+              processElement(child);
+            }
+            break;
+          }
+
+          // Handle figcaption as italic text
+          case 'figcaption': {
+            const { plaintext, facets } = extractInlineFormatting(element);
+            if (plaintext) {
+              // Add italic facet for the entire caption
+              const byteEnd = new TextEncoder().encode(plaintext).length;
+              facets.push({
+                index: { byteStart: 0, byteEnd },
+                features: [{ "$type": "pub.leaflet.richtext.facet#italic" }]
+              });
+
+              blocks.push({
+                "$type": "pub.leaflet.pages.linearDocument#block",
+                "block": {
+                  "$type": "pub.leaflet.blocks.text",
+                  "plaintext": plaintext,
+                  "facets": facets
+                }
+              });
+            }
+            break;
+          }
+
+          // Handle br as a potential paragraph break when alone
+          case 'br': {
+            // Usually handled inline, skip
+            break;
+          }
+
+          // Default: try to extract text content as paragraph
+          default: {
+            // Check if it's an inline element that might contain content
+            const inlineElements = ['span', 'strong', 'b', 'em', 'i', 'a', 'code', 's', 'strike', 'del', 'u', 'small', 'mark'];
+            if (inlineElements.includes(tagName)) {
+              // These should be handled by parent paragraph
+              break;
+            }
+
+            // For unknown block elements, try to extract as text
+            const { plaintext, facets } = extractInlineFormatting(element);
+            if (plaintext) {
+              blocks.push({
+                "$type": "pub.leaflet.pages.linearDocument#block",
+                "block": {
+                  "$type": "pub.leaflet.blocks.text",
+                  "plaintext": plaintext,
+                  "facets": facets
+                }
+              });
+            }
+            break;
+          }
+        }
+      }
+
+      // Process all top-level elements
+      for (const child of container.children) {
+        processElement(child);
+      }
+
+      // Handle case where HTML has no block elements (just text nodes or inline elements)
+      if (blocks.length === 0 && container.textContent.trim()) {
+        const { plaintext, facets } = extractInlineFormatting(container);
+        if (plaintext) {
+          blocks.push({
+            "$type": "pub.leaflet.pages.linearDocument#block",
+            "block": {
+              "$type": "pub.leaflet.blocks.text",
+              "plaintext": plaintext,
+              "facets": facets
+            }
+          });
+        }
+      }
+
+      return blocks;
     }
 
     // ============================================
