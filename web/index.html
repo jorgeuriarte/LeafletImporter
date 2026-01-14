@@ -960,7 +960,11 @@
     // ============================================
     // Local dev: http://localhost:8787 (run: ./scripts/deploy.sh worker-dev)
     // Production: https://tumblr-proxy.<subdomain>.workers.dev
-    const TUMBLR_PROXY_URL = 'http://localhost:8787';
+    // Auto-detect environment: use local proxy in dev, production worker otherwise
+    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const TUMBLR_PROXY_URL = isLocalDev
+      ? 'http://localhost:8787'
+      : 'https://tumblr-proxy.jorge-uriarte.workers.dev';
     const BSKY_API = 'https://bsky.social/xrpc';
 
     // Set to true to use fake data (no proxy needed)
