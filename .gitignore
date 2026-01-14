@@ -8,3 +8,4 @@ output/
 .local-worker.pid
 .wrangler/
 web/node_modules/
+dist/

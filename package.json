@@ -1,0 +1,13 @@
+{
+  "name": "leaflet-importer",
+  "version": "1.0.0",
+  "description": "Migrate blogs from Tumblr to Leaflet.pub",
+  "scripts": {
+    "build": "./scripts/deploy.sh build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jorgeuriarte/LeafletImporter"
+  },
+  "license": "MIT"
+}

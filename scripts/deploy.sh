@@ -7,9 +7,10 @@
 #   dev         - Start local server + worker (full local dev)
 #   local       - Start local development server only
 #   stop        - Stop all local services
+#   build       - Build web app with version injection (for CF Pages)
 #   worker      - Deploy Cloudflare Worker to production
 #   worker-dev  - Run Cloudflare Worker locally only
-#   pages       - Deploy to GitHub Pages (push to main)
+#   pages       - Push to GitHub (triggers CF Pages deploy)
 #   status      - Show status of all services
 #
 
@@ -33,6 +34,45 @@ log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+# ============================================
+# Version Injection
+# ============================================
+get_build_version() {
+    local hash=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    local date=$(date -u +"%Y-%m-%d %H:%M UTC")
+    echo "${hash} (${date})"
+}
+
+inject_version() {
+    local file="$1"
+    local version=$(get_build_version)
+
+    if [ ! -f "$file" ]; then
+        log_error "File not found: $file"
+        return 1
+    fi
+
+    # Replace placeholder with version
+    if grep -q "__BUILD_VERSION__" "$file"; then
+        sed -i.bak "s/__BUILD_VERSION__/${version}/g" "$file"
+        rm -f "${file}.bak"
+        log_info "Injected version '${version}' into $(basename $file)"
+    else
+        log_warn "No __BUILD_VERSION__ placeholder found in $(basename $file)"
+    fi
+}
+
+restore_placeholder() {
+    local file="$1"
+    local version=$(get_build_version)
+
+    if [ -f "$file" ]; then
+        # Restore placeholder for git cleanliness
+        sed -i.bak "s/${version}/__BUILD_VERSION__/g" "$file"
+        rm -f "${file}.bak"
+    fi
+}
 
 # ============================================
 # Local Development Server
@@ -114,14 +154,27 @@ deploy_worker() {
 
     cd "$WEB_DIR"
 
+    # Inject version before deploy
+    inject_version "$WEB_DIR/worker.js"
+
+    local deploy_result=0
     if command -v wrangler &>/dev/null; then
-        wrangler deploy
+        wrangler deploy || deploy_result=$?
     else
-        npx wrangler deploy
+        npx wrangler deploy || deploy_result=$?
     fi
 
-    log_success "Worker deployed!"
-    log_info "URL: https://tumblr-proxy.<your-subdomain>.workers.dev"
+    # Restore placeholder after deploy (keep git clean)
+    restore_placeholder "$WEB_DIR/worker.js"
+
+    if [ $deploy_result -eq 0 ]; then
+        log_success "Worker deployed with version: $(get_build_version)"
+        log_info "URL: https://tumblr-proxy.<your-subdomain>.workers.dev"
+        log_info "Version endpoint: https://tumblr-proxy.<your-subdomain>.workers.dev/version"
+    else
+        log_error "Worker deployment failed!"
+        exit 1
+    fi
 }
 
 start_worker_dev() {
@@ -196,6 +249,30 @@ run_worker_dev() {
     else
         npx wrangler dev --port $WORKER_PORT
     fi
+}
+
+# ============================================
+# Web Build (for Cloudflare Pages)
+# ============================================
+build_web() {
+    log_info "Building web app with version injection..."
+
+    local version=$(get_build_version)
+    local dist_dir="$PROJECT_ROOT/dist"
+
+    # Create dist directory
+    rm -rf "$dist_dir"
+    mkdir -p "$dist_dir"
+
+    # Copy files
+    cp "$WEB_DIR/index.html" "$dist_dir/"
+
+    # Inject version
+    inject_version "$dist_dir/index.html"
+
+    log_success "Web built to dist/ with version: $version"
+    log_info "Files in dist/:"
+    ls -la "$dist_dir"
 }
 
 # ============================================
@@ -318,7 +395,8 @@ show_status() {
     echo "  ./scripts/deploy.sh local       # Start web server only"
     echo "  ./scripts/deploy.sh worker-dev  # Run worker (interactive)"
     echo "  ./scripts/deploy.sh worker      # Deploy worker to Cloudflare"
-    echo "  ./scripts/deploy.sh pages       # Push to GitHub Pages"
+    echo "  ./scripts/deploy.sh build       # Build web with version"
+    echo "  ./scripts/deploy.sh pages       # Push to GitHub (CF Pages)"
     echo ""
 }
 
@@ -350,11 +428,14 @@ case "${1:-status}" in
     pages)
         deploy_pages
         ;;
+    build)
+        build_web
+        ;;
     status)
         show_status
         ;;
     *)
-        echo "Usage: $0 {dev|local|stop|worker|worker-dev|pages|status}"
+        echo "Usage: $0 {dev|local|stop|worker|worker-dev|pages|build|status}"
         exit 1
         ;;
 esac

@@ -924,6 +924,10 @@
         Made with &#x2764; using AT Protocol |
         <a href="https://github.com/jorgeuriarte/LeafletImporter" style="color: white;">GitHub</a>
       </p>
+      <p style="font-size: 0.75rem; opacity: 0.6; margin-top: 0.5rem;">
+        Web: <span id="version-web">__BUILD_VERSION__</span> |
+        Proxy: <span id="version-proxy">checking...</span>
+      </p>
     </footer>
   </div>
 
@@ -2627,6 +2631,23 @@
     // Initialize
     // ============================================
     console.log('Tumblr to Leaflet Importer loaded');
+
+    // Check proxy version
+    (async function checkProxyVersion() {
+      const versionEl = document.getElementById('version-proxy');
+      if (!versionEl) return;
+      try {
+        const response = await fetch(`${TUMBLR_PROXY_URL}/version`);
+        if (response.ok) {
+          const data = await response.json();
+          versionEl.textContent = data.version || 'unknown';
+        } else {
+          versionEl.textContent = 'unavailable';
+        }
+      } catch {
+        versionEl.textContent = 'offline';
+      }
+    })();
   </script>
 </body>
 </html>

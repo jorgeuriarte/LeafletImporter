@@ -7,8 +7,25 @@
  * Deploy: wrangler deploy worker.js --name tumblr-proxy
  */
 
+const BUILD_VERSION = '__BUILD_VERSION__';
+
 export default {
   async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+
+    // Version endpoint
+    if (url.pathname === '/version') {
+      return new Response(JSON.stringify({
+        version: BUILD_VERSION,
+        service: 'tumblr-proxy'
+      }), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
+
     // Handle CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, {
