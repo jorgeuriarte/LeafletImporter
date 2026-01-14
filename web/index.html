@@ -1086,9 +1086,12 @@
             "$type": "pub.leaflet.pages.linearDocument",
             "id": generateUuid(),
             "blocks": [{
-              "$type": "pub.leaflet.blocks.text",
-              "text": "Este es un post de prueba creado por Tumblr to Leaflet Importer. Si ves esto, la conexion funciona correctamente! Puedes borrar este post.",
-              "facets": [],
+              "$type": "pub.leaflet.pages.linearDocument#block",
+              "block": {
+                "$type": "pub.leaflet.blocks.text",
+                "plaintext": "Este es un post de prueba creado por Tumblr to Leaflet Importer. Si ves esto, la conexion funciona correctamente! Puedes borrar este post.",
+                "facets": [],
+              }
             }],
           }],
         };
