@@ -23,6 +23,14 @@ A browser-based migrator. No installs, no backend—your credentials never leave
 
 **Live:** [leafletimporter.pages.dev](https://leafletimporter.pages.dev/)
 
+### Screenshots
+
+![Step 1: Connect your Tumblr blog](docs/images/step1-tumblr.png)
+
+![Step 2: Connect to Leaflet via Bluesky](docs/images/step2-leaflet.png)
+
+![Step 3: Migrate your posts](docs/images/step3-migrate.png)
+
 ### How it works
 
 1. Enter your Tumblr blog URL (e.g., `myblog.tumblr.com`)
