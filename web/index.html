@@ -2488,14 +2488,14 @@
     function parseVideoEmbed(src) {
       if (!src) return null;
 
-      // YouTube embed URLs
+      // YouTube embed URLs - keep embed format for iframe
       const youtubeMatch = src.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]+)/);
       if (youtubeMatch) {
         return {
           platform: 'YouTube',
           videoId: youtubeMatch[1],
-          url: `https://www.youtube.com/watch?v=${youtubeMatch[1]}`,
-          emoji: '▶️'
+          embedUrl: `https://www.youtube.com/embed/${youtubeMatch[1]}?rel=0`,
+          height: 315
         };
       }
 
@@ -2505,8 +2505,8 @@
         return {
           platform: 'YouTube',
           videoId: youtubeNoCookieMatch[1],
-          url: `https://www.youtube.com/watch?v=${youtubeNoCookieMatch[1]}`,
-          emoji: '▶️'
+          embedUrl: `https://www.youtube.com/embed/${youtubeNoCookieMatch[1]}?rel=0`,
+          height: 315
         };
       }
 
@@ -2516,8 +2516,8 @@
         return {
           platform: 'Vimeo',
           videoId: vimeoMatch[1],
-          url: `https://vimeo.com/${vimeoMatch[1]}`,
-          emoji: '▶️'
+          embedUrl: `https://player.vimeo.com/video/${vimeoMatch[1]}`,
+          height: 315
         };
       }
 
@@ -2527,8 +2527,8 @@
         return {
           platform: 'Dailymotion',
           videoId: dailymotionMatch[1],
-          url: `https://www.dailymotion.com/video/${dailymotionMatch[1]}`,
-          emoji: '▶️'
+          embedUrl: `https://www.dailymotion.com/embed/video/${dailymotionMatch[1]}`,
+          height: 315
         };
       }
 
@@ -2538,19 +2538,18 @@
         return {
           platform: 'Spotify',
           videoId: spotifyMatch[2],
-          url: `https://open.spotify.com/${spotifyMatch[1]}/${spotifyMatch[2]}`,
-          emoji: '🎵'
+          embedUrl: `https://open.spotify.com/embed/${spotifyMatch[1]}/${spotifyMatch[2]}`,
+          height: 152  // Spotify embeds are shorter
         };
       }
 
-      // SoundCloud
-      if (src.includes('soundcloud.com')) {
-        // SoundCloud embeds are complex, just use the src as-is
+      // SoundCloud - use the embed src as-is
+      if (src.includes('soundcloud.com') && src.includes('player')) {
         return {
           platform: 'SoundCloud',
           videoId: '',
-          url: src.replace('/player/', '/'),
-          emoji: '🎵'
+          embedUrl: src,
+          height: 166  // SoundCloud default height
         };
       }
 
@@ -2559,29 +2558,15 @@
     }
 
     /**
-     * Create a text block with a video link.
+     * Create an iframe block for video/audio embeds.
      */
-    function createVideoLinkBlock(videoInfo) {
-      const text = `${videoInfo.emoji} ${videoInfo.platform}: ${videoInfo.url}`;
-      const linkStart = text.indexOf(videoInfo.url);
-      const linkEnd = linkStart + videoInfo.url.length;
-
-      // Calculate byte positions
-      const byteStart = new TextEncoder().encode(text.slice(0, linkStart)).length;
-      const byteEnd = new TextEncoder().encode(text.slice(0, linkEnd)).length;
-
+    function createVideoEmbedBlock(videoInfo) {
       return {
         "$type": "pub.leaflet.pages.linearDocument#block",
         "block": {
-          "$type": "pub.leaflet.blocks.text",
-          "plaintext": text,
-          "facets": [{
-            index: { byteStart, byteEnd },
-            features: [{
-              "$type": "pub.leaflet.richtext.facet#link",
-              "uri": videoInfo.url
-            }]
-          }]
+          "$type": "pub.leaflet.blocks.iframe",
+          "url": videoInfo.embedUrl,
+          "height": videoInfo.height || 315
         }
       };
     }
@@ -2806,7 +2791,7 @@
             const src = element.getAttribute('src') || '';
             const videoInfo = parseVideoEmbed(src);
             if (videoInfo) {
-              blocks.push(createVideoLinkBlock(videoInfo));
+              blocks.push(createVideoEmbedBlock(videoInfo));
             }
             break;
           }
@@ -2831,7 +2816,7 @@
               const src = iframe.getAttribute('src') || '';
               const videoInfo = parseVideoEmbed(src);
               if (videoInfo) {
-                blocks.push(createVideoLinkBlock(videoInfo));
+                blocks.push(createVideoEmbedBlock(videoInfo));
                 break;
               }
             }
