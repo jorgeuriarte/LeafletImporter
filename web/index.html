@@ -1756,14 +1756,21 @@
       }
 
       // Get plain text for description (strip HTML for the description field)
-      const plainContent = stripHtml(htmlContent);
+      let plainContent = stripHtml(htmlContent);
+
+      // If description starts with a URL, skip it (looks awkward as description)
+      if (/^https?:\/\/\S+/.test(plainContent)) {
+        // Find first whitespace after URL and use text after it
+        const afterUrl = plainContent.replace(/^https?:\/\/\S+\s*/, '');
+        plainContent = afterUrl;
+      }
 
       const record = {
         "$type": "pub.leaflet.document",
         "author": session.did,
         "title": title,
         "tags": ["tumblr-import"],
-        "description": plainContent.slice(0, 300),
+        "description": plainContent.slice(0, 300).trim(),
         "publication": publication.uri,
         "publishedAt": publishedAt,
         "pages": [{
