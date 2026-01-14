@@ -1133,6 +1133,27 @@
       });
     }
 
+    // Generate deterministic rkey from Tumblr post URL for idempotency
+    async function generateDeterministicRkey(postUrl) {
+      // Use SHA-256 hash of the URL, then encode as base32 (TID-like format)
+      const encoder = new TextEncoder();
+      const data = encoder.encode(postUrl);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = new Uint8Array(hashBuffer);
+
+      // Take first 8 bytes and convert to base32 (13 chars like TID)
+      let result = [];
+      let bits = 0n;
+      for (let i = 0; i < 8; i++) {
+        bits = (bits << 8n) | BigInt(hashArray[i]);
+      }
+      for (let i = 0; i < 13; i++) {
+        result.push(B32_CHARSET[Number(bits & 0x1Fn)]);
+        bits >>= 5n;
+      }
+      return result.reverse().join('');
+    }
+
     // ============================================
     // Tumblr API (via proxy)
     // ============================================
@@ -1234,6 +1255,8 @@
       return response.json();
     }
 
+    // Uses putRecord for upsert behavior - creates or updates if rkey exists
+    // Combined with deterministic rkeys, this ensures idempotent imports
     async function createRecord(session, collection, rkey, record) {
       const response = await fetch(`${BSKY_API}/com.atproto.repo.putRecord`, {
         method: 'POST',
@@ -1579,7 +1602,10 @@
     }
 
     async function convertTumblrPostToLeafletDocument(post, session, publication) {
-      const rkey = generateTid();
+      // Generate deterministic rkey from Tumblr post URL for idempotency
+      // This ensures re-importing won't create duplicates
+      const postUrl = post.link || post.guid || `tumblr-${post.title}-${post.date}`;
+      const rkey = await generateDeterministicRkey(postUrl);
       const now = new Date().toISOString();
 
       // Parse the original post date if available
