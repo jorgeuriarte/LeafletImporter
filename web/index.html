@@ -737,14 +737,18 @@
       // Remove protocol
       url = url.replace(/^https?:\/\//, '');
 
-      // Remove trailing slashes
+      // Remove trailing slashes and paths
       url = url.replace(/\/+$/, '');
 
       // Check if it's a tumblr.com domain
       if (url.includes('tumblr.com')) {
+        // Format: www.tumblr.com/blogname or tumblr.com/blogname
+        const dashboardMatch = url.match(/^(?:www\.)?tumblr\.com\/([a-z0-9-]+)/);
+        if (dashboardMatch) return dashboardMatch[1];
+
         // Format: blogname.tumblr.com
-        const match = url.match(/^([a-z0-9-]+)\.tumblr\.com/);
-        if (match) return match[1];
+        const subdomainMatch = url.match(/^([a-z0-9-]+)\.tumblr\.com/);
+        if (subdomainMatch) return subdomainMatch[1];
       }
 
       // Maybe it's just the blog name
