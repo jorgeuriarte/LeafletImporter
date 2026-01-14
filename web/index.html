@@ -321,17 +321,13 @@
       display: none;
     }
 
-    details.preview-section[open] .expand-hint {
-      display: none;
-    }
-
-    details.preview-section summary {
+    details.posts-details summary {
       padding: 0.5rem;
       border-radius: 0.5rem;
       transition: background 0.2s;
     }
 
-    details.preview-section summary:hover {
+    details.posts-details summary:hover {
       background: #f3f4f6;
     }
 
@@ -799,16 +795,18 @@
         </div>
       </div>
 
-      <details id="tumblr-preview" class="preview-section" style="display: none;">
-        <summary class="preview-header" style="cursor: pointer; user-select: none;">
-          <span class="preview-title">✓ Connected</span>
-          <span class="post-count" id="post-count">0 posts</span>
-          <span class="expand-hint" style="margin-left: auto; font-size: 0.8rem; color: #6b7280;">click to expand</span>
-        </summary>
-        <div class="posts-grid" id="posts-grid">
-          <!-- Posts will be loaded here -->
-        </div>
-      </details>
+      <div id="tumblr-preview" class="preview-section" style="display: none;">
+        <div id="tumblr-blog-info" class="blog-info" style="margin-bottom: 0.75rem; color: #059669; font-weight: 500;"></div>
+        <details class="posts-details">
+          <summary class="preview-header" style="cursor: pointer; user-select: none;">
+            <span class="preview-title">Posts preview</span>
+            <span class="post-count" id="post-count">0 posts</span>
+          </summary>
+          <div class="posts-grid" id="posts-grid">
+            <!-- Posts will be loaded here -->
+          </div>
+        </details>
+      </div>
 
       <div id="tumblr-status" class="status"></div>
     </div>
@@ -1030,6 +1028,7 @@
       tumblrUrl: $('tumblr-url'),
       btnValidateTumblr: $('btn-validate-tumblr'),
       tumblrPreview: $('tumblr-preview'),
+      tumblrBlogInfo: $('tumblr-blog-info'),
       postsGrid: $('posts-grid'),
       postCount: $('post-count'),
       tumblrStatus: $('tumblr-status'),
@@ -1515,8 +1514,8 @@
           </div>
         `).join('');
 
+        elements.tumblrBlogInfo.innerHTML = `Blog found: <strong>${escapeHtml(data.blog.name)}</strong>`;
         elements.tumblrPreview.style.display = 'block';
-        showStatus(elements.tumblrStatus, 'success', `Blog found: <strong>${escapeHtml(data.blog.name)}</strong>`);
 
       } catch (error) {
         showStatus(elements.tumblrStatus, 'error', `Error: ${error.message}`);
