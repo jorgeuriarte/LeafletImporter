@@ -1036,7 +1036,8 @@
     const TUMBLR_PROXY_URL = isLocalDev
       ? 'http://localhost:8787'
       : 'https://tumblr-proxy.jorge-uriarte.workers.dev';
-    const BSKY_API = 'https://bsky.social/xrpc';
+    const DEFAULT_PDS = 'https://bsky.social';
+    const SLINGSHOT_API = 'https://slingshot.microcosm.blue/xrpc';
 
     // Set to true to use fake data (no proxy needed)
     const USE_MOCK_DATA = false;
@@ -1050,6 +1051,7 @@
       leafletPublication: null,
       userPublications: [],  // User's own publications loaded from PDS
       bskySession: null,
+      pdsUrl: null,  // User's resolved PDS URL
       testPostUri: null,
       testPostRkey: null,
       // Migration state
@@ -1060,6 +1062,11 @@
       failedPosts: [],
       currentPostIndex: 0,
     };
+
+    // Get the API URL (user's PDS or default)
+    function getApiUrl() {
+      return (state.pdsUrl || DEFAULT_PDS) + '/xrpc';
+    }
 
     // ============================================
     // DOM Elements
@@ -1449,8 +1456,29 @@
     // ============================================
     // Bluesky/AT Protocol API
     // ============================================
+
+    // Resolve user's PDS from their handle using Slingshot
+    async function resolvePDS(handle) {
+      const response = await fetch(
+        `${SLINGSHOT_API}/com.bad-example.identity.resolveMiniDoc?identifier=${encodeURIComponent(handle)}`
+      );
+
+      if (!response.ok) {
+        // Fallback to default PDS if resolution fails
+        console.warn('PDS resolution failed, using default:', DEFAULT_PDS);
+        return { pds: DEFAULT_PDS, did: null, handle: handle };
+      }
+
+      const data = await response.json();
+      return {
+        pds: data.pds,
+        did: data.did,
+        handle: data.handle,
+      };
+    }
+
     async function createSession(handle, password) {
-      const response = await fetch(`${BSKY_API}/com.atproto.server.createSession`, {
+      const response = await fetch(`${getApiUrl()}/com.atproto.server.createSession`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1470,7 +1498,7 @@
     // Uses putRecord for upsert behavior - creates or updates if rkey exists
     // Combined with deterministic rkeys, this ensures idempotent imports
     async function createRecord(session, collection, rkey, record) {
-      const response = await fetch(`${BSKY_API}/com.atproto.repo.putRecord`, {
+      const response = await fetch(`${getApiUrl()}/com.atproto.repo.putRecord`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1493,7 +1521,7 @@
     }
 
     async function deleteRecord(session, collection, rkey) {
-      const response = await fetch(`${BSKY_API}/com.atproto.repo.deleteRecord`, {
+      const response = await fetch(`${getApiUrl()}/com.atproto.repo.deleteRecord`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1521,7 +1549,7 @@
         limit: limit.toString(),
       });
 
-      const response = await fetch(`${BSKY_API}/com.atproto.repo.listRecords?${params}`, {
+      const response = await fetch(`${getApiUrl()}/com.atproto.repo.listRecords?${params}`, {
         headers: {
           'Authorization': `Bearer ${session.accessJwt}`,
         },
@@ -1732,6 +1760,7 @@
     const clearSession = () => {
       if (state.bskySession) {
         state.bskySession = null;
+        state.pdsUrl = null;
         state.userPublications = [];
         state.leafletPublication = null;
         elements.credentialsInfo.classList.remove('visible');
@@ -1764,10 +1793,27 @@
       elements.credentialsInfo.classList.remove('visible');
 
       try {
+        // Step 1: Resolve user's PDS
+        showStatus(elements.credentialsStatus, 'info', '🔍 Resolving your PDS...');
+        const pdsInfo = await resolvePDS(handle);
+        state.pdsUrl = pdsInfo.pds;
+        console.log('Resolved PDS:', pdsInfo);
+
+        // Step 2: Authenticate with the resolved PDS
+        showStatus(elements.credentialsStatus, 'info', '🔑 Authenticating...');
         const session = await createSession(handle, password);
         state.bskySession = session;
 
+        // Show success with PDS info
+        const pdsDisplay = state.pdsUrl.replace('https://', '');
         showStatus(elements.credentialsStatus, 'success', `✓ Authenticated as @${session.handle}`);
+
+        // Display PDS and DID info
+        elements.credentialsInfo.innerHTML = `
+          <div><span class="label">DID:</span> <span class="value">${session.did}</span></div>
+          <div><span class="label">PDS:</span> <span class="value" style="color: #0369a1;">${pdsDisplay}</span></div>
+        `;
+        elements.credentialsInfo.classList.add('visible');
 
         elements.bskyHandle.classList.add('valid');
         elements.bskyPassword.classList.add('valid');
@@ -2293,7 +2339,7 @@
      * @returns {Promise<object>} - The blob reference from the API
      */
     async function uploadBlob(session, imageData, mimeType) {
-      const response = await fetch(`${BSKY_API}/com.atproto.repo.uploadBlob`, {
+      const response = await fetch(`${getApiUrl()}/com.atproto.repo.uploadBlob`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.accessJwt}`,
