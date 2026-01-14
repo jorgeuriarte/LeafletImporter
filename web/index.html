@@ -611,7 +611,12 @@
         >
       </div>
 
+      <button class="btn btn-secondary" id="btn-validate-credentials">
+        &#x1F511; Validar credenciales
+      </button>
+
       <div id="credentials-status" class="status"></div>
+      <div id="credentials-info" class="parsed-info"></div>
     </div>
 
     <!-- Step 3: Test & Import -->
@@ -727,7 +732,9 @@
       leafletParsed: $('leaflet-parsed'),
       bskyHandle: $('bluesky-handle'),
       bskyPassword: $('bluesky-password'),
+      btnValidateCredentials: $('btn-validate-credentials'),
       credentialsStatus: $('credentials-status'),
+      credentialsInfo: $('credentials-info'),
 
       btnTestWrite: $('btn-test-write'),
       testResult: $('test-result'),
@@ -1042,30 +1049,25 @@
     // Test write
     elements.btnTestWrite.addEventListener('click', async () => {
       const leafletUri = elements.leafletUrl.value.trim();
-      const handle = elements.bskyHandle.value.trim();
-      const password = elements.bskyPassword.value.trim();
 
-      // Validate inputs
-      if (!leafletUri || !handle || !password) {
-        showStatus(elements.testStatus, 'error', 'Por favor completa todos los campos de conexion.');
+      // Check if credentials are validated
+      if (!state.bskySession) {
+        showStatus(elements.testStatus, 'error', 'Primero valida tus credenciales con el boton "Validar credenciales".');
         return;
       }
 
       const publication = parseLeafletUri(leafletUri);
       if (!publication) {
-        showStatus(elements.testStatus, 'error', 'URL invalida. Acepta: at://did.../pub.leaflet.publication/... o https://leaflet.pub/lish/did.../...');
+        showStatus(elements.testStatus, 'error', 'URL de Leaflet invalida. Pegala en el campo de arriba.');
         return;
       }
-      console.log('Parsed publication:', publication);
 
       setLoading(elements.btnTestWrite, true);
       hideStatus(elements.testStatus);
       elements.testResult.classList.remove('visible');
 
       try {
-        // Authenticate
-        const session = await createSession(handle, password);
-        state.bskySession = session;
+        const session = state.bskySession;
         state.leafletPublication = publication;
 
         // Create test document
@@ -1138,6 +1140,67 @@
         showStatus(elements.testStatus, 'error', `Error al borrar: ${error.message}`);
       } finally {
         setLoading(elements.btnDeleteTest, false);
+      }
+    });
+
+    // Clear session when credentials change
+    const clearSession = () => {
+      if (state.bskySession) {
+        state.bskySession = null;
+        elements.credentialsInfo.classList.remove('visible');
+        elements.bskyHandle.classList.remove('valid', 'invalid');
+        elements.bskyPassword.classList.remove('valid', 'invalid');
+        elements.step2Indicator.classList.remove('done');
+        elements.step2Indicator.textContent = '2';
+      }
+    };
+    elements.bskyHandle.addEventListener('input', clearSession);
+    elements.bskyPassword.addEventListener('input', clearSession);
+
+    // Validate credentials
+    elements.btnValidateCredentials.addEventListener('click', async () => {
+      const handle = elements.bskyHandle.value.trim();
+      const password = elements.bskyPassword.value.trim();
+
+      if (!handle || !password) {
+        showStatus(elements.credentialsStatus, 'error', 'Introduce tu handle y App Password.');
+        return;
+      }
+
+      setLoading(elements.btnValidateCredentials, true);
+      hideStatus(elements.credentialsStatus);
+      elements.credentialsInfo.classList.remove('visible');
+
+      try {
+        const session = await createSession(handle, password);
+        state.bskySession = session;
+
+        elements.credentialsInfo.innerHTML = `
+          <div><span class="label">DID:</span> <span class="value">${session.did}</span></div>
+          <div><span class="label">Handle:</span> <span class="value">@${session.handle}</span></div>
+          <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #059669;">✓ Autenticacion correcta</div>
+        `;
+        elements.credentialsInfo.classList.remove('error');
+        elements.credentialsInfo.classList.add('visible');
+
+        elements.bskyHandle.classList.add('valid');
+        elements.bskyPassword.classList.add('valid');
+
+        // Check if step 2 is complete
+        const leafletOk = parseLeafletUri(elements.leafletUrl.value.trim());
+        if (leafletOk) {
+          elements.step2Indicator.classList.add('done');
+          elements.step2Indicator.textContent = '✓';
+        }
+
+      } catch (error) {
+        elements.credentialsInfo.innerHTML = `<span class="value">${error.message}</span>`;
+        elements.credentialsInfo.classList.add('visible', 'error');
+        elements.bskyHandle.classList.add('invalid');
+        elements.bskyPassword.classList.add('invalid');
+        state.bskySession = null;
+      } finally {
+        setLoading(elements.btnValidateCredentials, false);
       }
     });
 
