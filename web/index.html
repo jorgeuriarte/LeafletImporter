@@ -845,19 +845,7 @@
         </p>
       </div>
 
-      <div class="form-group">
-        <label for="leaflet-url">
-          Leaflet Publication URL
-          <span class="label-hint">- Paste your Leaflet blog URL</span>
-        </label>
-        <input
-          type="text"
-          id="leaflet-url"
-          placeholder="https://leaflet.pub/lish/did:plc:.../..."
-        >
-        <div id="leaflet-parsed" class="parsed-info"></div>
-      </div>
-
+      <!-- Authentication first -->
       <div class="form-group">
         <label for="bluesky-handle">
           Bluesky Handle
@@ -885,10 +873,45 @@
       </div>
 
       <button class="btn btn-secondary" id="btn-validate-credentials">
-        &#x1F511; Validate credentials
+        &#x1F511; Authenticate
       </button>
 
       <div id="credentials-status" class="status"></div>
+
+      <!-- Publication selector (shown after auth) -->
+      <div id="publication-selector" style="display: none;">
+        <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid var(--border);">
+
+        <div class="form-group">
+          <label for="publication-select">
+            Your Publications
+            <span class="label-hint">- Select where to import posts</span>
+          </label>
+          <select id="publication-select" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; background: white;">
+            <option value="">Loading publications...</option>
+          </select>
+          <div id="publication-info" class="parsed-info" style="margin-top: 0.5rem;"></div>
+        </div>
+
+        <details style="margin-top: 1rem;">
+          <summary style="cursor: pointer; color: var(--text-light); font-size: 0.9rem;">
+            &#x1F517; Use external publication URL instead
+          </summary>
+          <div class="form-group" style="margin-top: 0.75rem;">
+            <label for="leaflet-url">
+              Leaflet Publication URL
+              <span class="label-hint">- For publications you have write access to</span>
+            </label>
+            <input
+              type="text"
+              id="leaflet-url"
+              placeholder="https://leaflet.pub/lish/did:plc:.../..."
+            >
+            <div id="leaflet-parsed" class="parsed-info"></div>
+          </div>
+        </details>
+      </div>
+
       <div id="credentials-info" class="parsed-info"></div>
     </div>
 
@@ -1025,6 +1048,7 @@
       tumblrBlog: null,
       tumblrPosts: [],
       leafletPublication: null,
+      userPublications: [],  // User's own publications loaded from PDS
       bskySession: null,
       testPostUri: null,
       testPostRkey: null,
@@ -1051,12 +1075,15 @@
       postCount: $('post-count'),
       tumblrStatus: $('tumblr-status'),
 
-      leafletUrl: $('leaflet-url'),
-      leafletParsed: $('leaflet-parsed'),
       bskyHandle: $('bluesky-handle'),
       bskyPassword: $('bluesky-password'),
       btnValidateCredentials: $('btn-validate-credentials'),
       credentialsStatus: $('credentials-status'),
+      publicationSelector: $('publication-selector'),
+      publicationSelect: $('publication-select'),
+      publicationInfo: $('publication-info'),
+      leafletUrl: $('leaflet-url'),
+      leafletParsed: $('leaflet-parsed'),
       credentialsInfo: $('credentials-info'),
 
       btnTestWrite: $('btn-test-write'),
@@ -1486,6 +1513,46 @@
       return response.json();
     }
 
+    async function listRecords(session, collection, limit = 100) {
+      const params = new URLSearchParams({
+        repo: session.did,
+        collection: collection,
+        limit: limit.toString(),
+      });
+
+      const response = await fetch(`${BSKY_API}/com.atproto.repo.listRecords?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${session.accessJwt}`,
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to list records');
+      }
+
+      return response.json();
+    }
+
+    async function fetchUserPublications(session) {
+      const result = await listRecords(session, 'pub.leaflet.publication');
+
+      // Sort by createdAt date (newest first)
+      const publications = (result.records || []).map(record => ({
+        uri: record.uri,
+        rkey: record.uri.split('/').pop(),
+        name: record.value.name || 'Untitled Publication',
+        description: record.value.description || '',
+        createdAt: record.value.createdAt,
+      })).sort((a, b) => {
+        const dateA = new Date(a.createdAt || 0);
+        const dateB = new Date(b.createdAt || 0);
+        return dateB - dateA;
+      });
+
+      return publications;
+    }
+
     // ============================================
     // Event Handlers
     // ============================================
@@ -1666,11 +1733,18 @@
     const clearSession = () => {
       if (state.bskySession) {
         state.bskySession = null;
+        state.userPublications = [];
+        state.leafletPublication = null;
         elements.credentialsInfo.classList.remove('visible');
         elements.bskyHandle.classList.remove('valid', 'invalid');
         elements.bskyPassword.classList.remove('valid', 'invalid');
         elements.step2Indicator.classList.remove('done');
         elements.step2Indicator.textContent = '2';
+        // Hide publication selector
+        elements.publicationSelector.style.display = 'none';
+        elements.publicationSelect.innerHTML = '<option value="">Loading publications...</option>';
+        elements.publicationInfo.classList.remove('visible');
+        hideStatus(elements.credentialsStatus);
       }
     };
     elements.bskyHandle.addEventListener('input', clearSession);
@@ -1694,39 +1768,95 @@
         const session = await createSession(handle, password);
         state.bskySession = session;
 
-        elements.credentialsInfo.innerHTML = `
-          <div><span class="label">DID:</span> <span class="value">${session.did}</span></div>
-          <div><span class="label">Handle:</span> <span class="value">@${session.handle}</span></div>
-          <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #059669;">✓ Authentication successful</div>
-        `;
-        elements.credentialsInfo.classList.remove('error');
-        elements.credentialsInfo.classList.add('visible');
+        showStatus(elements.credentialsStatus, 'success', `✓ Authenticated as @${session.handle}`);
 
         elements.bskyHandle.classList.add('valid');
         elements.bskyPassword.classList.add('valid');
 
-        // Check if step 2 is complete
-        const leafletOk = parseLeafletUri(elements.leafletUrl.value.trim());
-        if (leafletOk) {
-          elements.step2Indicator.classList.add('done');
-          elements.step2Indicator.textContent = '✓';
+        // Show publication selector
+        elements.publicationSelector.style.display = 'block';
+        elements.publicationSelect.innerHTML = '<option value="">Loading publications...</option>';
+
+        // Load user's publications
+        try {
+          const publications = await fetchUserPublications(session);
+          state.userPublications = publications;
+
+          if (publications.length === 0) {
+            elements.publicationSelect.innerHTML = '<option value="">No publications found</option>';
+            elements.publicationInfo.innerHTML = '<span style="color: var(--text-light);">Create a publication on leaflet.pub first, or use an external URL below.</span>';
+            elements.publicationInfo.classList.add('visible');
+          } else {
+            let options = '<option value="">Select a publication...</option>';
+            publications.forEach((pub, index) => {
+              const date = pub.createdAt ? new Date(pub.createdAt).toLocaleDateString() : '';
+              const dateStr = date ? ` (${date})` : '';
+              options += `<option value="${index}">${pub.name}${dateStr}</option>`;
+            });
+            elements.publicationSelect.innerHTML = options;
+            elements.publicationInfo.innerHTML = '';
+            elements.publicationInfo.classList.remove('visible');
+          }
+        } catch (pubError) {
+          console.error('Error loading publications:', pubError);
+          elements.publicationSelect.innerHTML = '<option value="">Error loading publications</option>';
+          elements.publicationInfo.innerHTML = '<span style="color: var(--error);">Could not load publications. Use manual URL below.</span>';
+          elements.publicationInfo.classList.add('visible');
         }
 
-        // Check if this handle+publication combo is already validated
-        checkAndShowSkipOption();
-
       } catch (error) {
-        elements.credentialsInfo.innerHTML = `<span class="value">${error.message}</span>`;
-        elements.credentialsInfo.classList.add('visible', 'error');
+        showStatus(elements.credentialsStatus, 'error', error.message);
         elements.bskyHandle.classList.add('invalid');
         elements.bskyPassword.classList.add('invalid');
         state.bskySession = null;
+        elements.publicationSelector.style.display = 'none';
       } finally {
         setLoading(elements.btnValidateCredentials, false);
       }
     });
 
-    // Leaflet URL live validation
+    // Publication dropdown selection
+    elements.publicationSelect.addEventListener('change', () => {
+      const selectedIndex = elements.publicationSelect.value;
+
+      if (selectedIndex === '' || !state.userPublications) {
+        elements.publicationInfo.innerHTML = '';
+        elements.publicationInfo.classList.remove('visible');
+        state.leafletPublication = null;
+        elements.step2Indicator.classList.remove('done');
+        elements.step2Indicator.textContent = '2';
+        return;
+      }
+
+      const pub = state.userPublications[parseInt(selectedIndex)];
+      state.leafletPublication = {
+        uri: pub.uri,
+        did: state.bskySession.did,
+        rkey: pub.rkey,
+      };
+
+      elements.publicationInfo.innerHTML = `
+        <div><span class="label">Name:</span> <span class="value">${pub.name}</span></div>
+        ${pub.description ? `<div><span class="label">Description:</span> <span class="value">${pub.description}</span></div>` : ''}
+        <div><span class="label">rkey:</span> <span class="value">${pub.rkey}</span></div>
+        <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #059669;">✓ Publication selected</div>
+      `;
+      elements.publicationInfo.classList.add('visible');
+
+      // Mark step 2 as done
+      elements.step2Indicator.classList.add('done');
+      elements.step2Indicator.textContent = '✓';
+
+      // Clear manual URL if publication selected from dropdown
+      elements.leafletUrl.value = '';
+      elements.leafletParsed.classList.remove('visible');
+      elements.leafletUrl.classList.remove('valid', 'invalid');
+
+      // Check if this handle+publication combo is already validated
+      checkAndShowSkipOption();
+    });
+
+    // Leaflet URL live validation (manual URL entry)
     elements.leafletUrl.addEventListener('input', () => {
       const value = elements.leafletUrl.value.trim();
       const parsed = elements.leafletParsed;
@@ -1737,9 +1867,16 @@
         return;
       }
 
+      // Clear dropdown selection when using manual URL
+      elements.publicationSelect.value = '';
+      elements.publicationInfo.classList.remove('visible');
+
       const result = parseLeafletUri(value);
 
       if (result) {
+        // Set publication from manual URL
+        state.leafletPublication = result;
+
         parsed.innerHTML = `
           <div><span class="label">DID:</span> <span class="value">${result.did}</span></div>
           <div><span class="label">Publication:</span> <span class="value">${result.rkey}</span></div>
@@ -1749,11 +1886,20 @@
         parsed.classList.add('visible');
         elements.leafletUrl.classList.remove('invalid');
         elements.leafletUrl.classList.add('valid');
+
+        // Mark step 2 as done if authenticated
+        if (state.bskySession) {
+          elements.step2Indicator.classList.add('done');
+          elements.step2Indicator.textContent = '✓';
+        }
       } else {
+        state.leafletPublication = null;
         parsed.innerHTML = `<span class="value">URL not recognized. Use leaflet.pub/lish/... or at://did...</span>`;
         parsed.classList.add('visible', 'error');
         elements.leafletUrl.classList.remove('valid');
         elements.leafletUrl.classList.add('invalid');
+        elements.step2Indicator.classList.remove('done');
+        elements.step2Indicator.textContent = '2';
       }
 
       // Check if this combo is already validated
@@ -1766,14 +1912,21 @@
         // Require valid session
         if (!state.bskySession) {
           elements.skipTestCheckbox.checked = false;
-          showStatus(elements.testStatus, 'error', 'First validate your credentials.');
+          showStatus(elements.testStatus, 'error', 'First authenticate with your credentials.');
           return;
         }
-        // Parse publication and store it
-        const leafletUri = elements.leafletUrl.value.trim();
-        const publication = parseLeafletUri(leafletUri);
-        if (publication) {
-          state.leafletPublication = publication;
+        // Require publication (from dropdown or manual URL)
+        if (!state.leafletPublication) {
+          // Try to parse from manual URL as fallback
+          const leafletUri = elements.leafletUrl.value.trim();
+          const publication = parseLeafletUri(leafletUri);
+          if (publication) {
+            state.leafletPublication = publication;
+          } else {
+            elements.skipTestCheckbox.checked = false;
+            showStatus(elements.testStatus, 'error', 'First select a publication or enter a valid Leaflet URL.');
+            return;
+          }
         }
         // Enable migration button
         elements.btnStartImport.disabled = false;
@@ -1783,8 +1936,6 @@
         // Disable migration button unless test was done
         if (!state.testPostUri) {
           elements.btnStartImport.disabled = true;
-          elements.step2Indicator.classList.remove('done');
-          elements.step2Indicator.textContent = '2';
         }
       }
     });
