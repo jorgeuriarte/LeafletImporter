@@ -877,42 +877,49 @@
       </button>
 
       <div id="credentials-status" class="status"></div>
+      <div id="credentials-info" class="parsed-info"></div>
 
       <!-- Publication selector (shown after auth) -->
       <div id="publication-selector" style="display: none;">
         <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid var(--border);">
 
-        <div class="form-group">
-          <label for="publication-select">
-            Your Publications
-            <span class="label-hint">- Select where to import posts</span>
-          </label>
+        <label style="display: block; margin-bottom: 0.75rem; font-weight: 500;">
+          Select Publication
+          <span class="label-hint">- Where to import your posts</span>
+        </label>
+
+        <!-- Tab buttons -->
+        <div class="pub-tabs" style="display: flex; gap: 0; margin-bottom: 0;">
+          <button type="button" id="tab-my-pubs" class="pub-tab active" style="flex: 1; padding: 0.75rem 1rem; border: 1px solid var(--border); border-bottom: none; border-radius: 8px 8px 0 0; background: white; font-size: 0.95rem; cursor: pointer; font-weight: 500;">
+            📚 Your Publications
+          </button>
+          <button type="button" id="tab-external" class="pub-tab" style="flex: 1; padding: 0.75rem 1rem; border: 1px solid var(--border); border-bottom: none; border-radius: 8px 8px 0 0; background: #f5f5f5; font-size: 0.95rem; cursor: pointer; color: var(--text-light);">
+            🔗 External URL
+          </button>
+        </div>
+
+        <!-- Tab content: Your Publications -->
+        <div id="tab-content-my-pubs" class="tab-content" style="border: 1px solid var(--border); border-radius: 0 0 8px 8px; padding: 1rem; background: white;">
           <select id="publication-select" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; background: white;">
             <option value="">Loading publications...</option>
           </select>
           <div id="publication-info" class="parsed-info" style="margin-top: 0.5rem;"></div>
         </div>
 
-        <details style="margin-top: 1rem;">
-          <summary style="cursor: pointer; color: var(--text-light); font-size: 0.9rem;">
-            &#x1F517; Use external publication URL instead
-          </summary>
-          <div class="form-group" style="margin-top: 0.75rem;">
-            <label for="leaflet-url">
-              Leaflet Publication URL
-              <span class="label-hint">- For publications you have write access to</span>
-            </label>
-            <input
-              type="text"
-              id="leaflet-url"
-              placeholder="https://leaflet.pub/lish/did:plc:.../..."
-            >
-            <div id="leaflet-parsed" class="parsed-info"></div>
-          </div>
-        </details>
+        <!-- Tab content: External URL -->
+        <div id="tab-content-external" class="tab-content" style="display: none; border: 1px solid var(--border); border-radius: 0 0 8px 8px; padding: 1rem; background: white;">
+          <input
+            type="text"
+            id="leaflet-url"
+            placeholder="https://leaflet.pub/lish/did:plc:.../..."
+            style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem;"
+          >
+          <div id="leaflet-parsed" class="parsed-info" style="margin-top: 0.5rem;"></div>
+          <p style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-light);">
+            Use this for publications you have write access to but aren't in your PDS.
+          </p>
+        </div>
       </div>
-
-      <div id="credentials-info" class="parsed-info"></div>
     </div>
 
     <!-- Step 3: Test & Import -->
@@ -1086,12 +1093,16 @@
       bskyPassword: $('bluesky-password'),
       btnValidateCredentials: $('btn-validate-credentials'),
       credentialsStatus: $('credentials-status'),
+      credentialsInfo: $('credentials-info'),
       publicationSelector: $('publication-selector'),
+      tabMyPubs: $('tab-my-pubs'),
+      tabExternal: $('tab-external'),
+      tabContentMyPubs: $('tab-content-my-pubs'),
+      tabContentExternal: $('tab-content-external'),
       publicationSelect: $('publication-select'),
       publicationInfo: $('publication-info'),
       leafletUrl: $('leaflet-url'),
       leafletParsed: $('leaflet-parsed'),
-      credentialsInfo: $('credentials-info'),
 
       btnTestWrite: $('btn-test-write'),
       testResult: $('test-result'),
@@ -1859,6 +1870,42 @@
         setLoading(elements.btnValidateCredentials, false);
       }
     });
+
+    // Tab switching for publication selector
+    function switchToTab(tab) {
+      const isMyPubs = tab === 'my-pubs';
+
+      // Update tab button styles
+      elements.tabMyPubs.style.background = isMyPubs ? 'white' : '#f5f5f5';
+      elements.tabMyPubs.style.fontWeight = isMyPubs ? '500' : 'normal';
+      elements.tabMyPubs.style.color = isMyPubs ? 'inherit' : 'var(--text-light)';
+
+      elements.tabExternal.style.background = isMyPubs ? '#f5f5f5' : 'white';
+      elements.tabExternal.style.fontWeight = isMyPubs ? 'normal' : '500';
+      elements.tabExternal.style.color = isMyPubs ? 'var(--text-light)' : 'inherit';
+
+      // Show/hide tab content
+      elements.tabContentMyPubs.style.display = isMyPubs ? 'block' : 'none';
+      elements.tabContentExternal.style.display = isMyPubs ? 'none' : 'block';
+
+      // Clear selection from the other tab when switching
+      if (isMyPubs) {
+        elements.leafletUrl.value = '';
+        elements.leafletParsed.classList.remove('visible');
+        elements.leafletUrl.classList.remove('valid', 'invalid');
+      } else {
+        elements.publicationSelect.value = '';
+        elements.publicationInfo.classList.remove('visible');
+      }
+
+      // Clear publication state when switching tabs
+      state.leafletPublication = null;
+      elements.step2Indicator.classList.remove('done');
+      elements.step2Indicator.textContent = '2';
+    }
+
+    elements.tabMyPubs.addEventListener('click', () => switchToTab('my-pubs'));
+    elements.tabExternal.addEventListener('click', () => switchToTab('external'));
 
     // Publication dropdown selection
     elements.publicationSelect.addEventListener('change', () => {
