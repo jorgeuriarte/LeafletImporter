@@ -539,12 +539,12 @@
       <div class="form-group">
         <label for="leaflet-url">
           URL de tu publicacion Leaflet
-          <span class="label-hint">- La encuentras en tu perfil de Leaflet</span>
+          <span class="label-hint">- Pega la URL de tu blog en Leaflet</span>
         </label>
         <input
           type="text"
           id="leaflet-url"
-          placeholder="at://did:plc:xxx/pub.leaflet.publication/xxx"
+          placeholder="https://leaflet.pub/lish/did:plc:.../..."
         >
       </div>
 
@@ -760,11 +760,24 @@
     }
 
     function parseLeafletUri(uri) {
-      // Format: at://did:plc:xxx/pub.leaflet.publication/rkey
-      const match = uri.match(/^at:\/\/(did:[^/]+)\/pub\.leaflet\.publication\/([^/]+)$/);
-      if (match) {
-        return { did: match[1], rkey: match[2] };
+      uri = uri.trim();
+
+      // Format 1: at://did:plc:xxx/pub.leaflet.publication/rkey
+      const atMatch = uri.match(/^at:\/\/(did:[^/]+)\/pub\.leaflet\.publication\/([^/]+)$/);
+      if (atMatch) {
+        return { did: atMatch[1], rkey: atMatch[2], uri: uri };
       }
+
+      // Format 2 & 3: https://leaflet.pub/lish/did:plc:xxx/rkey or .../rkey/dashboard
+      const webMatch = uri.match(/leaflet\.pub\/lish\/(did:[^/]+)\/([^/]+)/);
+      if (webMatch) {
+        const did = webMatch[1];
+        const rkey = webMatch[2];
+        // Reconstruct the AT URI
+        const atUri = `at://${did}/pub.leaflet.publication/${rkey}`;
+        return { did, rkey, uri: atUri };
+      }
+
       return null;
     }
 
@@ -829,13 +842,20 @@
       }
 
       const rssUrl = `https://${blogName}.tumblr.com/rss`;
-      const response = await fetch(`${TUMBLR_PROXY_URL}?url=${encodeURIComponent(rssUrl)}`);
+      const proxyUrl = `${TUMBLR_PROXY_URL}?url=${encodeURIComponent(rssUrl)}`;
+      console.log('Fetching:', proxyUrl);
+
+      const response = await fetch(proxyUrl);
+      console.log('Response status:', response.status);
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
         throw new Error(`Error fetching blog: ${response.status}`);
       }
 
       const xml = await response.text();
+      console.log('RSS length:', xml.length, 'chars');
       return parseTumblrRss(xml);
     }
 
@@ -934,7 +954,10 @@
 
     // Validate Tumblr URL
     elements.btnValidateTumblr.addEventListener('click', async () => {
-      const blogName = extractBlogName(elements.tumblrUrl.value);
+      const inputValue = elements.tumblrUrl.value;
+      console.log('Input value:', inputValue);
+      const blogName = extractBlogName(inputValue);
+      console.log('Extracted blog name:', blogName);
 
       if (!blogName) {
         showStatus(elements.tumblrStatus, 'error', 'URL invalida. Usa el formato: miblog.tumblr.com');
@@ -992,9 +1015,10 @@
 
       const publication = parseLeafletUri(leafletUri);
       if (!publication) {
-        showStatus(elements.testStatus, 'error', 'URI de Leaflet invalida. Debe ser: at://did:plc:xxx/pub.leaflet.publication/xxx');
+        showStatus(elements.testStatus, 'error', 'URL invalida. Acepta: at://did.../pub.leaflet.publication/... o https://leaflet.pub/lish/did.../...');
         return;
       }
+      console.log('Parsed publication:', publication);
 
       setLoading(elements.btnTestWrite, true);
       hideStatus(elements.testStatus);
@@ -1016,7 +1040,7 @@
           "title": "Post de prueba - Tumblr Importer",
           "tags": [],
           "description": "Este es un post de prueba. Puedes borrarlo.",
-          "publication": leafletUri,
+          "publication": publication.uri,
           "publishedAt": now,
           "pages": [{
             "$type": "pub.leaflet.pages.linearDocument",
