@@ -2482,6 +2482,111 @@
     }
 
     /**
+     * Parse a video embed URL and extract platform and video ID.
+     * Supports YouTube, Vimeo, and other common platforms.
+     */
+    function parseVideoEmbed(src) {
+      if (!src) return null;
+
+      // YouTube embed URLs
+      const youtubeMatch = src.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]+)/);
+      if (youtubeMatch) {
+        return {
+          platform: 'YouTube',
+          videoId: youtubeMatch[1],
+          url: `https://www.youtube.com/watch?v=${youtubeMatch[1]}`,
+          emoji: '▶️'
+        };
+      }
+
+      // YouTube nocookie embed
+      const youtubeNoCookieMatch = src.match(/youtube-nocookie\.com\/embed\/([a-zA-Z0-9_-]+)/);
+      if (youtubeNoCookieMatch) {
+        return {
+          platform: 'YouTube',
+          videoId: youtubeNoCookieMatch[1],
+          url: `https://www.youtube.com/watch?v=${youtubeNoCookieMatch[1]}`,
+          emoji: '▶️'
+        };
+      }
+
+      // Vimeo embed URLs
+      const vimeoMatch = src.match(/player\.vimeo\.com\/video\/(\d+)/);
+      if (vimeoMatch) {
+        return {
+          platform: 'Vimeo',
+          videoId: vimeoMatch[1],
+          url: `https://vimeo.com/${vimeoMatch[1]}`,
+          emoji: '▶️'
+        };
+      }
+
+      // Dailymotion
+      const dailymotionMatch = src.match(/dailymotion\.com\/embed\/video\/([a-zA-Z0-9]+)/);
+      if (dailymotionMatch) {
+        return {
+          platform: 'Dailymotion',
+          videoId: dailymotionMatch[1],
+          url: `https://www.dailymotion.com/video/${dailymotionMatch[1]}`,
+          emoji: '▶️'
+        };
+      }
+
+      // Spotify (for audio embeds)
+      const spotifyMatch = src.match(/open\.spotify\.com\/embed\/(track|album|playlist)\/([a-zA-Z0-9]+)/);
+      if (spotifyMatch) {
+        return {
+          platform: 'Spotify',
+          videoId: spotifyMatch[2],
+          url: `https://open.spotify.com/${spotifyMatch[1]}/${spotifyMatch[2]}`,
+          emoji: '🎵'
+        };
+      }
+
+      // SoundCloud
+      if (src.includes('soundcloud.com')) {
+        // SoundCloud embeds are complex, just use the src as-is
+        return {
+          platform: 'SoundCloud',
+          videoId: '',
+          url: src.replace('/player/', '/'),
+          emoji: '🎵'
+        };
+      }
+
+      // Generic iframe - return null to skip
+      return null;
+    }
+
+    /**
+     * Create a text block with a video link.
+     */
+    function createVideoLinkBlock(videoInfo) {
+      const text = `${videoInfo.emoji} ${videoInfo.platform}: ${videoInfo.url}`;
+      const linkStart = text.indexOf(videoInfo.url);
+      const linkEnd = linkStart + videoInfo.url.length;
+
+      // Calculate byte positions
+      const byteStart = new TextEncoder().encode(text.slice(0, linkStart)).length;
+      const byteEnd = new TextEncoder().encode(text.slice(0, linkEnd)).length;
+
+      return {
+        "$type": "pub.leaflet.pages.linearDocument#block",
+        "block": {
+          "$type": "pub.leaflet.blocks.text",
+          "plaintext": text,
+          "facets": [{
+            index: { byteStart, byteEnd },
+            features: [{
+              "$type": "pub.leaflet.richtext.facet#link",
+              "uri": videoInfo.url
+            }]
+          }]
+        }
+      };
+    }
+
+    /**
      * Convert an image element to a pending image block.
      * The image will be uploaded as a blob later by processImageBlocks.
      */
@@ -2696,13 +2801,41 @@
             break;
           }
 
+          // Video embeds (iframe)
+          case 'iframe': {
+            const src = element.getAttribute('src') || '';
+            const videoInfo = parseVideoEmbed(src);
+            if (videoInfo) {
+              blocks.push(createVideoLinkBlock(videoInfo));
+            }
+            break;
+          }
+
           // Divs and other containers - process children
           case 'div':
           case 'section':
           case 'article':
           case 'main':
-          case 'aside':
+          case 'aside': {
+            for (const child of element.children) {
+              processElement(child);
+            }
+            break;
+          }
+
+          // Figures may contain video embeds or images
           case 'figure': {
+            // Check for video embed first
+            const iframe = element.querySelector('iframe');
+            if (iframe) {
+              const src = iframe.getAttribute('src') || '';
+              const videoInfo = parseVideoEmbed(src);
+              if (videoInfo) {
+                blocks.push(createVideoLinkBlock(videoInfo));
+                break;
+              }
+            }
+            // Otherwise process children normally (images, etc.)
             for (const child of element.children) {
               processElement(child);
             }
