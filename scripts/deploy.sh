@@ -7,10 +7,11 @@
 #   dev         - Start local server + worker (full local dev)
 #   local       - Start local development server only
 #   stop        - Stop all local services
-#   build       - Build web app with version injection (for CF Pages)
-#   worker      - Deploy Cloudflare Worker to production
+#   web         - Build and deploy web to CF Pages (with version)
+#   worker      - Deploy Cloudflare Worker (with version)
+#   build       - Build web locally (for testing)
 #   worker-dev  - Run Cloudflare Worker locally only
-#   pages       - Push to GitHub (triggers CF Pages deploy)
+#   pages       - Push to GitHub
 #   status      - Show status of all services
 #
 
@@ -276,6 +277,24 @@ build_web() {
     ls -la "$dist_dir"
 }
 
+deploy_web() {
+    log_info "Deploying web app to Cloudflare Pages..."
+
+    # Build first
+    build_web
+
+    # Deploy to CF Pages
+    cd "$PROJECT_ROOT"
+    if command -v wrangler &>/dev/null; then
+        wrangler pages deploy dist --project-name leafletimporter
+    else
+        npx wrangler pages deploy dist --project-name leafletimporter
+    fi
+
+    log_success "Web deployed to Cloudflare Pages!"
+    log_info "URL: https://leafletimporter.pages.dev"
+}
+
 # ============================================
 # Full Development Environment
 # ============================================
@@ -395,9 +414,8 @@ show_status() {
     echo "  ./scripts/deploy.sh stop        # Stop all local services"
     echo "  ./scripts/deploy.sh local       # Start web server only"
     echo "  ./scripts/deploy.sh worker-dev  # Run worker (interactive)"
-    echo "  ./scripts/deploy.sh worker      # Deploy worker to Cloudflare"
-    echo "  ./scripts/deploy.sh build       # Build web with version"
-    echo "  ./scripts/deploy.sh pages       # Push to GitHub (CF Pages)"
+    echo "  ./scripts/deploy.sh web         # Deploy web to CF Pages"
+    echo "  ./scripts/deploy.sh worker      # Deploy worker to CF"
     echo ""
 }
 
@@ -432,11 +450,14 @@ case "${1:-status}" in
     build)
         build_web
         ;;
+    web)
+        deploy_web
+        ;;
     status)
         show_status
         ;;
     *)
-        echo "Usage: $0 {dev|local|stop|worker|worker-dev|pages|build|status}"
+        echo "Usage: $0 {dev|local|stop|worker|web|worker-dev|pages|build|status}"
         exit 1
         ;;
 esac
