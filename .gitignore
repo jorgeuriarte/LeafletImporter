@@ -9,3 +9,4 @@ output/
 .wrangler/
 web/node_modules/
 dist/
+.playwright-mcp/
