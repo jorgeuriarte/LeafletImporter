@@ -1,18 +1,19 @@
 # Tumblr to Leaflet Migrator
 
-Migrate your Tumblr blog to [Leaflet.pub](https://leaflet.pub).
+Migrate your Tumblr blog to [Leaflet.pub](https://leaflet.pub) — take your writing to the open web.
 
-## Why migrate to Leaflet.pub?
+## Why Leaflet?
 
-Tumblr was great, but it's been in decline for years. Ownership changes, uncertain future, less and less development. Your content is trapped in a platform you don't control.
+Your words deserve a home you actually own.
 
-Leaflet is different: it's built on [AT Protocol](https://atproto.com/) (the protocol behind Bluesky). Your posts live on your personal PDS—the same place your Bluesky data lives. If Leaflet disappears tomorrow, your data is still yours.
+[Leaflet](https://leaflet.pub) is built on [AT Protocol](https://atproto.com/), the open protocol behind Bluesky. This means:
 
-Also:
-- **No lock-in.** Your posts are portable.
-- **Actually social.** Readers follow you via Bluesky or RSS.
-- **Custom domain** if you want.
-- **Comments and discovery** through Bluesky's social graph.
+- **Your data is yours.** Posts live in your personal data repository. You can back them up, move them, or take them elsewhere—no permission needed.
+- **No lock-in.** AT Protocol is designed for portability. If you want to leave, you leave with everything.
+- **Open by design.** Your content is accessible via RSS, Bluesky's social graph, or any AT Protocol client. No walled gardens.
+- **Interconnected.** Readers discover and follow you through Bluesky. Comments flow naturally from the social layer.
+
+This isn't just another blogging platform. It's publishing on infrastructure that respects your freedom.
 
 More at [about.leaflet.pub](https://about.leaflet.pub/).
 
@@ -29,18 +30,19 @@ A browser-based migrator. No installs, no backend—your credentials never leave
 3. Select your Leaflet publication
 4. Migrate
 
-The tool fetches your Tumblr RSS, converts posts to Leaflet format (preserving formatting, images, links), and publishes via AT Protocol.
+The tool fetches your Tumblr posts via API, converts them to Leaflet format (preserving formatting, images, links), and publishes via AT Protocol.
 
 ### Features
 
-- **Batch migration** with progress tracking
+- **Full archive migration** — fetches all posts, not just recent ones
 - **Preserves formatting:** headers, code blocks, lists, quotes, links
 - **Uploads images** as blobs (embedded, not external links)
-- **Pause/resume** if you need to step away
+- **Progress tracking** with pause/resume
+- **Idempotent imports** — safe to re-run without duplicates
 
-### Safe to re-import
+### Safe to re-run
 
-Each Tumblr post generates a unique identifier based on its URL. Running the migration again updates existing posts instead of duplicating them. Useful if you add new posts to Tumblr or want to fix something.
+Each Tumblr post generates a unique identifier based on its content hash. Running the migration again updates existing posts instead of duplicating them. Add new posts to Tumblr? Just run it again.
 
 ## Architecture
 
@@ -60,7 +62,7 @@ Each Tumblr post generates a unique identifier based on its URL. Running the mig
        │                    ▲
        ▼                    │
 ┌─────────────┐      Credentials stay
-│ Tumblr RSS  │      in your browser
+│ Tumblr API  │      in your browser
 │ & Images    │
 └─────────────┘
 ```
@@ -76,17 +78,7 @@ The CORS proxy (a Cloudflare Worker) is needed because browsers block direct req
 # Open http://localhost:8080
 ```
 
-The app auto-detects local vs production and uses the appropriate proxy URL.
-
-## Python CLI (alternative)
-
-For more control or batch processing from exports:
-
-```bash
-source venv/bin/activate
-python import_tumblr.py tumblr-export.zip  # Parse Tumblr export
-python publish_to_leaflet.py               # Publish to Leaflet
-```
+See [CLAUDE.md](CLAUDE.md) for full development and deployment documentation.
 
 ## License
 
