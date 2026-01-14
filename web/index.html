@@ -885,6 +885,14 @@
 
       <div id="test-status" class="status"></div>
 
+      <!-- Skip test option (shown when already validated) -->
+      <div id="skip-test-container" style="display: none; margin-top: 1rem; padding: 0.75rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 0.5rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" id="skip-test-checkbox">
+          <span style="color: #166534;">Skip test — this combination was validated before</span>
+        </label>
+      </div>
+
       <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e5e7eb;">
 
       <button class="btn btn-success" id="btn-start-import" disabled>
@@ -1019,6 +1027,8 @@
       testPostUrl: $('test-post-url'),
       btnDeleteTest: $('btn-delete-test'),
       testStatus: $('test-status'),
+      skipTestContainer: $('skip-test-container'),
+      skipTestCheckbox: $('skip-test-checkbox'),
       btnStartImport: $('btn-start-import'),
 
       // Migration progress elements
@@ -1115,6 +1125,40 @@
       }
 
       return null;
+    }
+
+    // ============================================
+    // Validation Storage (localStorage)
+    // ============================================
+    function getValidationKey(handle, publicationUri) {
+      return `leaflet-validated:${handle}:${publicationUri}`;
+    }
+
+    function isValidationSaved(handle, publicationUri) {
+      if (!handle || !publicationUri) return false;
+      const key = getValidationKey(handle, publicationUri);
+      return localStorage.getItem(key) === 'true';
+    }
+
+    function saveValidation(handle, publicationUri) {
+      if (!handle || !publicationUri) return;
+      const key = getValidationKey(handle, publicationUri);
+      localStorage.setItem(key, 'true');
+    }
+
+    function checkAndShowSkipOption() {
+      const handle = elements.bskyHandle.value.trim();
+      const leafletUri = elements.leafletUrl.value.trim();
+      const publication = parseLeafletUri(leafletUri);
+
+      // Hide skip option by default
+      elements.skipTestContainer.style.display = 'none';
+      elements.skipTestCheckbox.checked = false;
+
+      // Only show if we have valid handle and publication, and it's already validated
+      if (handle && publication && isValidationSaved(handle, publication.uri)) {
+        elements.skipTestContainer.style.display = 'block';
+      }
     }
 
     // Base32 sortable alphabet used by AT Protocol
@@ -1535,6 +1579,12 @@
         elements.step2Indicator.textContent = '✓';
         elements.btnStartImport.disabled = false;
 
+        // Save validation to localStorage for future sessions
+        const handle = elements.bskyHandle.value.trim();
+        saveValidation(handle, publication.uri);
+        // Hide skip option since test was just done
+        elements.skipTestContainer.style.display = 'none';
+
         showStatus(elements.testStatus, 'success', `
           Post created!<br>
           <small style="font-family: monospace; word-break: break-all;">
@@ -1625,6 +1675,9 @@
           elements.step2Indicator.textContent = '✓';
         }
 
+        // Check if this handle+publication combo is already validated
+        checkAndShowSkipOption();
+
       } catch (error) {
         elements.credentialsInfo.innerHTML = `<span class="value">${error.message}</span>`;
         elements.credentialsInfo.classList.add('visible', 'error');
@@ -1664,6 +1717,38 @@
         parsed.classList.add('visible', 'error');
         elements.leafletUrl.classList.remove('valid');
         elements.leafletUrl.classList.add('invalid');
+      }
+
+      // Check if this combo is already validated
+      checkAndShowSkipOption();
+    });
+
+    // Skip test checkbox handler
+    elements.skipTestCheckbox.addEventListener('change', () => {
+      if (elements.skipTestCheckbox.checked) {
+        // Require valid session
+        if (!state.bskySession) {
+          elements.skipTestCheckbox.checked = false;
+          showStatus(elements.testStatus, 'error', 'First validate your credentials.');
+          return;
+        }
+        // Parse publication and store it
+        const leafletUri = elements.leafletUrl.value.trim();
+        const publication = parseLeafletUri(leafletUri);
+        if (publication) {
+          state.leafletPublication = publication;
+        }
+        // Enable migration button
+        elements.btnStartImport.disabled = false;
+        elements.step2Indicator.classList.add('done');
+        elements.step2Indicator.textContent = '✓';
+      } else {
+        // Disable migration button unless test was done
+        if (!state.testPostUri) {
+          elements.btnStartImport.disabled = true;
+          elements.step2Indicator.classList.remove('done');
+          elements.step2Indicator.textContent = '2';
+        }
       }
     });
 
@@ -1756,7 +1841,9 @@
       }
 
       // Get plain text for description (strip HTML for the description field)
-      let plainContent = stripHtml(htmlContent);
+      // Apply same ad network filter used for blocks
+      let cleanedHtml = cleanAdNetworkCode(htmlContent);
+      let plainContent = stripHtml(cleanedHtml);
 
       // If description starts with a URL, skip it (looks awkward as description)
       if (/^https?:\/\/\S+/.test(plainContent)) {
