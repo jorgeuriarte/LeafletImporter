@@ -452,6 +452,42 @@
       margin-top: 1rem;
     }
 
+    /* Parsed info display */
+    .parsed-info {
+      margin-top: 0.5rem;
+      padding: 0.75rem;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-family: monospace;
+      display: none;
+    }
+
+    .parsed-info.visible {
+      display: block;
+    }
+
+    .parsed-info.error {
+      background: #fef2f2;
+      border-color: #fecaca;
+      color: #991b1b;
+    }
+
+    .parsed-info .label {
+      color: #6b7280;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    .parsed-info .value {
+      color: #065f46;
+      word-break: break-all;
+    }
+
+    .parsed-info.error .value {
+      color: #991b1b;
+    }
+
     /* Input with button */
     .input-group {
       display: flex;
@@ -546,6 +582,7 @@
           id="leaflet-url"
           placeholder="https://leaflet.pub/lish/did:plc:.../..."
         >
+        <div id="leaflet-parsed" class="parsed-info"></div>
       </div>
 
       <div class="form-group">
@@ -687,6 +724,7 @@
       tumblrStatus: $('tumblr-status'),
 
       leafletUrl: $('leaflet-url'),
+      leafletParsed: $('leaflet-parsed'),
       bskyHandle: $('bluesky-handle'),
       bskyPassword: $('bluesky-password'),
       credentialsStatus: $('credentials-status'),
@@ -1100,6 +1138,37 @@
         showStatus(elements.testStatus, 'error', `Error al borrar: ${error.message}`);
       } finally {
         setLoading(elements.btnDeleteTest, false);
+      }
+    });
+
+    // Leaflet URL live validation
+    elements.leafletUrl.addEventListener('input', () => {
+      const value = elements.leafletUrl.value.trim();
+      const parsed = elements.leafletParsed;
+
+      if (!value) {
+        parsed.classList.remove('visible');
+        elements.leafletUrl.classList.remove('valid', 'invalid');
+        return;
+      }
+
+      const result = parseLeafletUri(value);
+
+      if (result) {
+        parsed.innerHTML = `
+          <div><span class="label">DID:</span> <span class="value">${result.did}</span></div>
+          <div><span class="label">Publication:</span> <span class="value">${result.rkey}</span></div>
+          <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #059669;">✓ URL valida</div>
+        `;
+        parsed.classList.remove('error');
+        parsed.classList.add('visible');
+        elements.leafletUrl.classList.remove('invalid');
+        elements.leafletUrl.classList.add('valid');
+      } else {
+        parsed.innerHTML = `<span class="value">URL no reconocida. Usa leaflet.pub/lish/... o at://did...</span>`;
+        parsed.classList.add('visible', 'error');
+        elements.leafletUrl.classList.remove('valid');
+        elements.leafletUrl.classList.add('invalid');
       }
     });
 
