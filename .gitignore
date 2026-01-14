@@ -5,3 +5,6 @@ __pycache__/
 output/
 .credentials
 .local-server.pid
+.local-worker.pid
+.wrangler/
+web/node_modules/

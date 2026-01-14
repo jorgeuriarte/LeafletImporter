@@ -4,10 +4,11 @@
 # Usage: ./scripts/deploy.sh [command]
 #
 # Commands:
-#   local       - Start local development server
-#   stop        - Stop local development server
-#   worker      - Deploy Cloudflare Worker
-#   worker-dev  - Run Cloudflare Worker locally
+#   dev         - Start local server + worker (full local dev)
+#   local       - Start local development server only
+#   stop        - Stop all local services
+#   worker      - Deploy Cloudflare Worker to production
+#   worker-dev  - Run Cloudflare Worker locally only
 #   pages       - Deploy to GitHub Pages (push to main)
 #   status      - Show status of all services
 #
@@ -17,7 +18,9 @@ set -e
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WEB_DIR="$PROJECT_ROOT/web"
 PID_FILE="$PROJECT_ROOT/.local-server.pid"
+WORKER_PID_FILE="$PROJECT_ROOT/.local-worker.pid"
 LOCAL_PORT=8080
+WORKER_PORT=8787
 
 # Colors
 RED='\033[0;31m'
@@ -121,16 +124,107 @@ deploy_worker() {
     log_info "URL: https://tumblr-proxy.<your-subdomain>.workers.dev"
 }
 
-run_worker_dev() {
-    log_info "Starting Cloudflare Worker in dev mode..."
+start_worker_dev() {
+    log_info "Starting Cloudflare Worker locally..."
+
+    if [ -f "$WORKER_PID_FILE" ]; then
+        local pid=$(cat "$WORKER_PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            log_warn "Worker already running on PID $pid"
+            log_info "URL: http://localhost:$WORKER_PORT"
+            return 0
+        fi
+    fi
 
     cd "$WEB_DIR"
 
     if command -v wrangler &>/dev/null; then
-        wrangler dev
+        wrangler dev --port $WORKER_PORT &
     else
-        npx wrangler dev
+        npx wrangler dev --port $WORKER_PORT &
     fi
+
+    local pid=$!
+    echo $pid > "$WORKER_PID_FILE"
+
+    # Wait for worker to be ready
+    sleep 3
+    if kill -0 "$pid" 2>/dev/null; then
+        log_success "Worker started on PID $pid"
+        log_info "URL: http://localhost:$WORKER_PORT"
+    else
+        log_error "Failed to start worker"
+        rm -f "$WORKER_PID_FILE"
+        return 1
+    fi
+}
+
+stop_worker_dev() {
+    log_info "Stopping local worker..."
+
+    if [ -f "$WORKER_PID_FILE" ]; then
+        local pid=$(cat "$WORKER_PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+            # Also kill child processes (wrangler spawns children)
+            pkill -P "$pid" 2>/dev/null || true
+            rm -f "$WORKER_PID_FILE"
+            log_success "Worker stopped (PID $pid)"
+        else
+            log_warn "Worker not running (stale PID file)"
+            rm -f "$WORKER_PID_FILE"
+        fi
+    else
+        # Try to find and kill any wrangler process on our port
+        local pids=$(lsof -ti:$WORKER_PORT 2>/dev/null || true)
+        if [ -n "$pids" ]; then
+            log_info "Found process on port $WORKER_PORT, killing..."
+            echo "$pids" | xargs kill 2>/dev/null || true
+            log_success "Killed processes on port $WORKER_PORT"
+        fi
+    fi
+}
+
+run_worker_dev() {
+    # Interactive mode - runs in foreground
+    log_info "Starting Cloudflare Worker in dev mode (interactive)..."
+
+    cd "$WEB_DIR"
+
+    if command -v wrangler &>/dev/null; then
+        wrangler dev --port $WORKER_PORT
+    else
+        npx wrangler dev --port $WORKER_PORT
+    fi
+}
+
+# ============================================
+# Full Development Environment
+# ============================================
+start_dev() {
+    log_info "Starting full development environment..."
+    echo ""
+
+    start_local
+    echo ""
+    start_worker_dev
+
+    echo ""
+    echo "=========================================="
+    log_success "Development environment ready!"
+    echo "=========================================="
+    echo ""
+    echo "  Web App:  http://localhost:$LOCAL_PORT"
+    echo "  Worker:   http://localhost:$WORKER_PORT"
+    echo ""
+    echo "  Stop all: ./scripts/deploy.sh stop"
+    echo ""
+}
+
+stop_all() {
+    stop_local
+    stop_worker_dev
+    log_success "All services stopped"
 }
 
 # ============================================
@@ -185,12 +279,30 @@ show_status() {
         echo -e "${RED}Stopped${NC}"
     fi
 
-    # Check if wrangler is available for worker status
-    echo -n "Worker (CF):     "
-    if command -v wrangler &>/dev/null || command -v npx &>/dev/null; then
-        echo -e "${BLUE}Available${NC} - run 'deploy.sh worker' to deploy"
+    # Local worker
+    echo -n "Local Worker:    "
+    if [ -f "$WORKER_PID_FILE" ]; then
+        local wpid=$(cat "$WORKER_PID_FILE")
+        if kill -0 "$wpid" 2>/dev/null; then
+            echo -e "${GREEN}Running${NC} (PID $wpid) - http://localhost:$WORKER_PORT"
+        else
+            echo -e "${YELLOW}Stale PID${NC} (not running)"
+        fi
     else
-        echo -e "${YELLOW}wrangler not installed${NC}"
+        # Check if something is on the port anyway
+        if lsof -ti:$WORKER_PORT &>/dev/null; then
+            echo -e "${GREEN}Running${NC} (port $WORKER_PORT in use)"
+        else
+            echo -e "${RED}Stopped${NC}"
+        fi
+    fi
+
+    # Check if wrangler is available for worker status
+    echo -n "Wrangler:        "
+    if command -v wrangler &>/dev/null || command -v npx &>/dev/null; then
+        echo -e "${GREEN}Available${NC}"
+    else
+        echo -e "${YELLOW}Not installed${NC} (npm i -g wrangler)"
     fi
 
     # Git status
@@ -201,10 +313,11 @@ show_status() {
 
     echo ""
     echo "Commands:"
-    echo "  ./scripts/deploy.sh local       # Start local server"
-    echo "  ./scripts/deploy.sh stop        # Stop local server"
-    echo "  ./scripts/deploy.sh worker      # Deploy CF Worker"
-    echo "  ./scripts/deploy.sh worker-dev  # Run CF Worker locally"
+    echo "  ./scripts/deploy.sh dev         # Start all (server + worker)"
+    echo "  ./scripts/deploy.sh stop        # Stop all local services"
+    echo "  ./scripts/deploy.sh local       # Start web server only"
+    echo "  ./scripts/deploy.sh worker-dev  # Run worker (interactive)"
+    echo "  ./scripts/deploy.sh worker      # Deploy worker to Cloudflare"
     echo "  ./scripts/deploy.sh pages       # Push to GitHub Pages"
     echo ""
 }
@@ -213,17 +326,26 @@ show_status() {
 # Main
 # ============================================
 case "${1:-status}" in
+    dev)
+        start_dev
+        ;;
     local|start)
         start_local
         ;;
     stop)
-        stop_local
+        stop_all
         ;;
     worker)
         deploy_worker
         ;;
     worker-dev)
         run_worker_dev
+        ;;
+    worker-start)
+        start_worker_dev
+        ;;
+    worker-stop)
+        stop_worker_dev
         ;;
     pages)
         deploy_pages
@@ -232,7 +354,7 @@ case "${1:-status}" in
         show_status
         ;;
     *)
-        echo "Usage: $0 {local|stop|worker|worker-dev|pages|status}"
+        echo "Usage: $0 {dev|local|stop|worker|worker-dev|pages|status}"
         exit 1
         ;;
 esac

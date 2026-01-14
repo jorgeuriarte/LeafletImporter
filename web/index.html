@@ -653,11 +653,13 @@
     // ============================================
     // Configuration
     // ============================================
-    const TUMBLR_PROXY_URL = 'https://tumblr-proxy.workers.dev'; // TODO: Deploy actual worker
+    // Local dev: http://localhost:8787 (run: ./scripts/deploy.sh worker-dev)
+    // Production: https://tumblr-proxy.<subdomain>.workers.dev
+    const TUMBLR_PROXY_URL = 'http://localhost:8787';
     const BSKY_API = 'https://bsky.social/xrpc';
 
-    // For local testing without proxy
-    const USE_MOCK_DATA = true; // Set to false when proxy is deployed
+    // Set to true to use fake data (no proxy needed)
+    const USE_MOCK_DATA = false;
 
     // ============================================
     // State
