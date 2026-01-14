@@ -14,35 +14,54 @@ This project provides tools to migrate blogs from Tumblr to Leaflet.pub via AT P
 ## Quick Commands
 
 ```bash
-# Start local web server
-./scripts/deploy.sh local
+# Start full local dev (web server + worker proxy)
+./scripts/deploy.sh dev
 
-# Stop local web server
+# Stop all local services
 ./scripts/deploy.sh stop
 
 # Check status
 ./scripts/deploy.sh status
 
-# Deploy Cloudflare Worker
-./scripts/deploy.sh worker
+# Start only web server (port 8080)
+./scripts/deploy.sh local
 
-# Run worker locally for testing
+# Run worker locally (port 8787)
 ./scripts/deploy.sh worker-dev
+
+# Deploy worker to Cloudflare production
+./scripts/deploy.sh worker
 ```
 
 ---
 
 ## Local Development Environment
 
-### Web App
+### Full Dev Mode (Recommended)
 
 ```bash
-# Start server
-./scripts/deploy.sh local
-# Opens at: http://localhost:8080
+# Start everything (web server + worker proxy)
+./scripts/deploy.sh dev
 
-# Stop server
+# URLs:
+# - Web App:  http://localhost:8080
+# - Worker:   http://localhost:8787
+
+# Stop everything
 ./scripts/deploy.sh stop
+
+# Check status
+./scripts/deploy.sh status
+```
+
+### Individual Services
+
+```bash
+# Web server only (port 8080)
+./scripts/deploy.sh local
+
+# Worker proxy only (port 8787, interactive)
+./scripts/deploy.sh worker-dev
 ```
 
 **Files:**
@@ -52,8 +71,12 @@ This project provides tools to migrate blogs from Tumblr to Leaflet.pub via AT P
 
 **Configuration (in index.html):**
 ```javascript
-const TUMBLR_PROXY_URL = 'https://tumblr-proxy.workers.dev';
-const USE_MOCK_DATA = true;  // Set to false when proxy is deployed
+// Local dev (default - uses local worker)
+const TUMBLR_PROXY_URL = 'http://localhost:8787';
+const USE_MOCK_DATA = false;
+
+// Production (update when deploying to CF)
+// const TUMBLR_PROXY_URL = 'https://tumblr-proxy.<subdomain>.workers.dev';
 ```
 
 ### Python CLI Tools
