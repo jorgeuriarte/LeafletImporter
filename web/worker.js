@@ -7,7 +7,7 @@
  * Deploy: wrangler deploy worker.js --name tumblr-proxy
  */
 
-const BUILD_VERSION = '3c49dc0 (2026-01-14 13:45 UTC)';
+const BUILD_VERSION = '__BUILD_VERSION__';
 
 export default {
   async fetch(request, env, ctx) {
