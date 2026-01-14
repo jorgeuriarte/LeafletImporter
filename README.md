@@ -34,8 +34,11 @@ The tool fetches your Tumblr RSS, converts posts to Leaflet format (preserving f
 - **Batch migration** with progress tracking
 - **Preserves formatting:** headers, code blocks, lists, quotes, links
 - **Uploads images** as blobs (not just links)
-- **Idempotent:** re-running won't duplicate posts
 - **Pause/resume** if you need to step away
+
+### Safe to re-import
+
+Each Tumblr post generates a unique identifier based on its URL. If you run the migration again, existing posts get updated instead of duplicated. Useful if you add new posts to your Tumblr or want to fix something.
 
 ### Local development
 
