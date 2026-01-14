@@ -2,17 +2,19 @@
 
 Migrate your Tumblr blog to [Leaflet.pub](https://leaflet.pub).
 
-## Why Leaflet?
+## Why would I want to migrate to Leaflet.pub?
 
-Leaflet is a publishing platform built on [AT Protocol](https://atproto.com/) (the protocol behind Bluesky). Your posts live on your PDS—the same place your Bluesky data lives—open and under your control.
+Tumblr fue genial, pero lleva años en declive. Cambios de dueño, incertidumbre sobre su futuro, y cada vez menos desarrollo. Tu contenido está atrapado en una plataforma que no controlas.
 
-Key points:
-- **Your data, your control.** No platform lock-in.
-- **Social by default.** Readers follow via Bluesky feeds or RSS.
-- **Custom domains.** Use your own domain if you want.
-- **Comments and discovery** through the Bluesky social graph.
+Leaflet es diferente: está construido sobre [AT Protocol](https://atproto.com/) (el protocolo de Bluesky). Esto significa que tus posts viven en tu PDS personal—el mismo sitio donde viven tus datos de Bluesky. Si Leaflet desaparece mañana, tus datos siguen siendo tuyos.
 
-More at [about.leaflet.pub](https://about.leaflet.pub/).
+Además:
+- **Sin lock-in.** Tus posts son portables.
+- **Social de verdad.** Tus lectores te siguen desde Bluesky o RSS.
+- **Dominio propio** si quieres.
+- **Comentarios y descubrimiento** a través del grafo social de Bluesky.
+
+Más info en [about.leaflet.pub](https://about.leaflet.pub/).
 
 ## The Tool
 
