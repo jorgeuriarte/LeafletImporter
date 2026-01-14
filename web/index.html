@@ -1212,8 +1212,9 @@
 
     function checkAndShowSkipOption() {
       const handle = elements.bskyHandle.value.trim();
-      const leafletUri = elements.leafletUrl.value.trim();
-      const publication = parseLeafletUri(leafletUri);
+
+      // Use state.leafletPublication (from dropdown or manual URL)
+      const publication = state.leafletPublication;
 
       // Hide skip option by default
       elements.skipTestContainer.style.display = 'none';
@@ -1612,17 +1613,15 @@
 
     // Test write
     elements.btnTestWrite.addEventListener('click', async () => {
-      const leafletUri = elements.leafletUrl.value.trim();
-
       // Check if credentials are validated
       if (!state.bskySession) {
-        showStatus(elements.testStatus, 'error', 'First validate your credentials with the "Validate credentials" button.');
+        showStatus(elements.testStatus, 'error', 'First authenticate with your credentials.');
         return;
       }
 
-      const publication = parseLeafletUri(leafletUri);
-      if (!publication) {
-        showStatus(elements.testStatus, 'error', 'Invalid Leaflet URL. Paste it in the field above.');
+      // Use state.leafletPublication (from dropdown or manual URL)
+      if (!state.leafletPublication) {
+        showStatus(elements.testStatus, 'error', 'Select a publication or enter a valid Leaflet URL.');
         return;
       }
 
@@ -1632,7 +1631,7 @@
 
       try {
         const session = state.bskySession;
-        state.leafletPublication = publication;
+        const publication = state.leafletPublication;
 
         // Create test document
         const rkey = generateTid();
@@ -2189,17 +2188,15 @@
       }
 
       if (!state.bskySession) {
-        showStatus(elements.testStatus, 'error', 'Not authenticated. First validate your credentials.');
+        showStatus(elements.testStatus, 'error', 'Not authenticated. First authenticate with your credentials.');
         return;
       }
 
-      const leafletUri = elements.leafletUrl.value.trim();
-      const publication = parseLeafletUri(leafletUri);
-      if (!publication) {
-        showStatus(elements.testStatus, 'error', 'Invalid Leaflet URL. Enter a valid publication URL.');
+      // Use state.leafletPublication (from dropdown or manual URL)
+      if (!state.leafletPublication) {
+        showStatus(elements.testStatus, 'error', 'Select a publication or enter a valid Leaflet URL.');
         return;
       }
-      state.leafletPublication = publication;
 
       // Reset state for fresh migration
       resetMigrationState();
