@@ -53,13 +53,14 @@ inject_version() {
         return 1
     fi
 
-    # Replace placeholder with version
-    if grep -q "__BUILD_VERSION__" "$file"; then
+    # Replace placeholder with version (supports both formats)
+    if grep -q "__BUILD_VERSION__\|>dev<" "$file"; then
         sed -i.bak "s/__BUILD_VERSION__/${version}/g" "$file"
+        sed -i.bak "s/>dev</>$version</g" "$file"
         rm -f "${file}.bak"
         log_info "Injected version '${version}' into $(basename $file)"
     else
-        log_warn "No __BUILD_VERSION__ placeholder found in $(basename $file)"
+        log_warn "No version placeholder found in $(basename $file)"
     fi
 }
 

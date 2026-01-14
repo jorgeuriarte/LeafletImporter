@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head><title>Parser Test</title></head>
+<body>
+<script>
+function parseHtmlToLeafletBlocks(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<div>${html}</div>`, 'text/html');
+  const container = doc.body.firstChild;
+  const blocks = [];
+
+  function processElement(element) {
+    const tagName = element.tagName?.toLowerCase();
+    if (!tagName) return;
+
+    console.log('Processing:', tagName, element.textContent?.slice(0, 50));
+
+    switch (tagName) {
+      case 'p':
+        const text = element.textContent.trim();
+        if (text) {
+          blocks.push({ type: 'text', content: text });
+        }
+        break;
+      case 'img':
+        blocks.push({ type: 'image', src: element.src });
+        break;
+      case 'blockquote':
+        for (const child of element.children) {
+          processElement(child);
+        }
+        break;
+      case 'div':
+      case 'a':
+        for (const child of element.children) {
+          processElement(child);
+        }
+        break;
+    }
+  }
+
+  console.log('Container children:', container.children.length);
+  for (const child of container.children) {
+    processElement(child);
+  }
+
+  return blocks;
+}
+
+// Test with typical Tumblr RSS content
+const testContent = '<img src="https://example.com/img.jpg"/><br/><br/><p><a href="https://example.tumblr.com">someone</a>:</p><blockquote><p>Some reblogged content here</p></blockquote>';
+
+console.log('Input:', testContent);
+const result = parseHtmlToLeafletBlocks(testContent);
+console.log('Result:', JSON.stringify(result, null, 2));
+</script>
+</body>
+</html>
