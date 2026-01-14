@@ -1194,8 +1194,9 @@
         };
       }
 
-      const rssUrl = `https://${blogName}.tumblr.com/rss`;
-      const proxyUrl = `${TUMBLR_PROXY_URL}?url=${encodeURIComponent(rssUrl)}`;
+      // Use Tumblr API v1 (no auth required, supports pagination)
+      const apiUrl = `https://${blogName}.tumblr.com/api/read/json`;
+      const proxyUrl = `${TUMBLR_PROXY_URL}?url=${encodeURIComponent(apiUrl + '?num=50')}`;
 
       const response = await fetch(proxyUrl);
 
@@ -1203,39 +1204,133 @@
         throw new Error(`Error fetching blog: ${response.status}`);
       }
 
-      const xml = await response.text();
-      return parseTumblrRss(xml);
-    }
-
-    function parseTumblrRss(xml) {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(xml, 'text/xml');
-
-      const channel = doc.querySelector('channel');
-      const items = doc.querySelectorAll('item');
+      const jsonpText = await response.text();
+      const data = parseTumblrJsonp(jsonpText);
 
       const blog = {
-        name: channel.querySelector('title')?.textContent || 'Unknown',
-        description: channel.querySelector('description')?.textContent || '',
-        total_posts: items.length,
+        name: data.tumblelog?.title || 'Unknown',
+        description: data.tumblelog?.description || '',
+        total_posts: data['posts-total'] || 0,
       };
 
-      const posts = Array.from(items).map(item => {
-        const fullContent = item.querySelector('description')?.textContent || '';
-        return {
-          id: item.querySelector('guid')?.textContent || '',
-          title: item.querySelector('title')?.textContent || 'Untitled',
-          date: item.querySelector('pubDate')?.textContent || '',
-          // Keep full content for migration
-          content: fullContent,
-          // Truncated summary for preview display
-          summary: fullContent.slice(0, 200),
-          // Original Tumblr URL
-          link: item.querySelector('link')?.textContent || '',
-        };
-      });
+      // Convert API v1 posts to our format
+      const posts = (data.posts || []).map(post => convertApiPostToFormat(post));
 
-      return { blog, posts };
+      return { blog, posts, apiUrl, totalPosts: data['posts-total'] || 0 };
+    }
+
+    /**
+     * Fetch ALL posts from Tumblr using API v1 pagination
+     */
+    async function fetchAllTumblrPosts(blogName, onProgress) {
+      const allPosts = [];
+      const POSTS_PER_PAGE = 50;
+      let start = 0;
+
+      // First request to get total
+      const apiUrl = `https://${blogName}.tumblr.com/api/read/json`;
+      const firstUrl = `${TUMBLR_PROXY_URL}?url=${encodeURIComponent(apiUrl + '?num=' + POSTS_PER_PAGE)}`;
+
+      const firstResponse = await fetch(firstUrl);
+      if (!firstResponse.ok) {
+        throw new Error(`Error fetching blog: ${firstResponse.status}`);
+      }
+
+      const firstData = parseTumblrJsonp(await firstResponse.text());
+      const totalPosts = firstData['posts-total'] || 0;
+
+      allPosts.push(...(firstData.posts || []));
+      start += POSTS_PER_PAGE;
+
+      if (onProgress) onProgress(allPosts.length, totalPosts);
+
+      // Fetch remaining pages
+      while (start < totalPosts) {
+        const pageUrl = `${TUMBLR_PROXY_URL}?url=${encodeURIComponent(apiUrl + '?num=' + POSTS_PER_PAGE + '&start=' + start)}`;
+        const response = await fetch(pageUrl);
+
+        if (response.ok) {
+          const data = parseTumblrJsonp(await response.text());
+          allPosts.push(...(data.posts || []));
+        }
+
+        start += POSTS_PER_PAGE;
+        if (onProgress) onProgress(allPosts.length, totalPosts);
+
+        // Small delay to be nice to the server
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      return allPosts.map(post => convertApiPostToFormat(post));
+    }
+
+    function parseTumblrJsonp(text) {
+      // Parse JSONP format: var tumblr_api_read = {...};
+      const match = text.match(/var tumblr_api_read = (.+);\s*$/s);
+      if (match) {
+        return JSON.parse(match[1]);
+      }
+      throw new Error('Invalid Tumblr API response');
+    }
+
+    function convertApiPostToFormat(post) {
+      const postType = post.type || 'regular';
+      let title = '';
+      let content = '';
+
+      // Extract content based on post type
+      if (postType === 'regular') {
+        title = post['regular-title'] || '';
+        content = post['regular-body'] || '';
+      } else if (postType === 'quote') {
+        const quoteText = post['quote-text'] || '';
+        const quoteSource = post['quote-source'] || '';
+        content = `<blockquote>${quoteText}</blockquote><p>— ${quoteSource}</p>`;
+      } else if (postType === 'link') {
+        title = post['link-text'] || post['link-url'] || '';
+        const linkUrl = post['link-url'] || '';
+        const linkDesc = post['link-description'] || '';
+        content = `<p><a href="${linkUrl}">${title}</a></p>${linkDesc}`;
+      } else if (postType === 'photo') {
+        const caption = post['photo-caption'] || '';
+        const photos = post.photos || [];
+        if (photos.length > 0) {
+          content = photos.map(p => {
+            const url = p['photo-url-1280'] || p['photo-url-500'] || '';
+            return `<figure><img src="${url}" /></figure>`;
+          }).join('\n') + caption;
+        } else {
+          const photoUrl = post['photo-url-1280'] || post['photo-url-500'] || '';
+          content = `<figure><img src="${photoUrl}" /></figure>${caption}`;
+        }
+      } else if (postType === 'video') {
+        content = (post['video-player'] || '') + (post['video-caption'] || '');
+      } else if (postType === 'audio') {
+        content = (post['audio-player'] || '') + (post['audio-caption'] || '');
+      } else {
+        title = post['regular-title'] || '';
+        content = post['regular-body'] || '';
+      }
+
+      // Use slug as fallback title
+      if (!title && post.slug) {
+        title = post.slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      }
+
+      // Parse date
+      const unixTs = post['unix-timestamp'];
+      const dateStr = unixTs ? new Date(unixTs * 1000).toUTCString() : post['date-gmt'] || '';
+
+      return {
+        id: post.id?.toString() || '',
+        title: title || 'Untitled',
+        date: dateStr,
+        content: content,
+        summary: content.replace(/<[^>]*>/g, '').slice(0, 200),
+        link: post['url-with-slug'] || post.url || '',
+        tags: post.tags || [],
+        type: postType,
+      };
     }
 
     // ============================================
@@ -1329,6 +1424,8 @@
 
         state.tumblrBlog = data.blog;
         state.tumblrPosts = data.posts;
+        state.tumblrBlogName = blogName; // Store for fetching all posts later
+        state.tumblrTotalPosts = data.totalPosts || data.posts.length;
 
         // Update UI
         elements.tumblrUrl.classList.remove('invalid');
@@ -1336,8 +1433,12 @@
         elements.step1Indicator.classList.add('done');
         elements.step1Indicator.textContent = '✓';
 
-        // Show preview
-        elements.postCount.textContent = `${data.posts.length} posts`;
+        // Show preview (first 50 posts, but show total count)
+        const previewCount = data.posts.length;
+        const totalCount = state.tumblrTotalPosts;
+        elements.postCount.textContent = totalCount > previewCount
+          ? `${totalCount} posts (showing ${previewCount})`
+          : `${totalCount} posts`;
         elements.postsGrid.innerHTML = data.posts.map(post => `
           <div class="post-card">
             <h4>${escapeHtml(post.title)}</h4>
@@ -1629,7 +1730,11 @@
 
       // Parse HTML content to Leaflet blocks with proper formatting
       const htmlContent = post.content || post.summary || '';
+      console.log('DEBUG: Parsing post:', title);
+      console.log('DEBUG: HTML content length:', htmlContent.length);
+      console.log('DEBUG: HTML content preview:', htmlContent.slice(0, 500));
       let blocks = parseHtmlToLeafletBlocks(htmlContent);
+      console.log('DEBUG: Parsed blocks:', blocks.length);
 
       // Process any pending image blocks (upload blobs)
       blocks = await processImageBlocks(session, blocks);
@@ -1789,8 +1894,8 @@
     // Start migration
     elements.btnStartImport.addEventListener('click', async () => {
       // Validate prerequisites
-      if (!state.tumblrPosts || state.tumblrPosts.length === 0) {
-        showStatus(elements.testStatus, 'error', 'No posts to migrate. First validate your Tumblr blog URL.');
+      if (!state.tumblrBlogName) {
+        showStatus(elements.testStatus, 'error', 'No blog selected. First validate your Tumblr blog URL.');
         return;
       }
 
@@ -1820,16 +1925,33 @@
       elements.progressBar.classList.remove('complete', 'error');
       elements.migrationControls.style.display = 'flex';
       elements.migrationSummary.classList.remove('visible', 'has-errors');
-      elements.progressTitle.textContent = 'Migrating posts...';
+      elements.progressTitle.textContent = 'Fetching all posts...';
       elements.btnPauseImport.innerHTML = '&#x23F8; Pause';
 
       // Disable start button during migration
       elements.btnStartImport.disabled = true;
 
+      // Fetch ALL posts using API v1 pagination
+      addLogEntry(`Fetching all posts from ${state.tumblrBlogName}...`, 'info');
+
+      try {
+        state.tumblrPosts = await fetchAllTumblrPosts(state.tumblrBlogName, (fetched, total) => {
+          elements.progressTitle.textContent = `Fetching posts... ${fetched}/${total}`;
+          updateProgress(fetched, total);
+        });
+
+        addLogEntry(`Fetched ${state.tumblrPosts.length} posts. Starting migration...`, 'success');
+      } catch (error) {
+        addLogEntry(`Error fetching posts: ${error.message}`, 'error');
+        showMigrationSummary(true);
+        elements.btnStartImport.disabled = false;
+        return;
+      }
+
       // Start migration
       state.migrationInProgress = true;
       const total = state.tumblrPosts.length;
-      addLogEntry(`Starting migration of ${total} posts...`, 'info');
+      elements.progressTitle.textContent = 'Migrating posts...';
       updateProgress(0, total);
 
       await runMigration();
