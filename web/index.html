@@ -1889,11 +1889,14 @@
         plainContent = afterUrl;
       }
 
+      // Combine "tumblr-import" tag with original Tumblr tags
+      const tags = ["tumblr-import", ...(post.tags || [])];
+
       const record = {
         "$type": "pub.leaflet.document",
         "author": session.did,
         "title": title,
-        "tags": ["tumblr-import"],
+        "tags": tags,
         "description": plainContent.slice(0, 300).trim(),
         "publication": publication.uri,
         "publishedAt": publishedAt,
