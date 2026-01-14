@@ -268,6 +268,7 @@ build_web() {
 
     # Copy files
     cp "$WEB_DIR/index.html" "$dist_dir/"
+    cp "$WEB_DIR/_headers" "$dist_dir/" 2>/dev/null || true
 
     # Inject version
     inject_version "$dist_dir/index.html"
