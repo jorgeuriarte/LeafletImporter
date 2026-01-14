@@ -2558,6 +2558,49 @@
     }
 
     /**
+     * Parse a video URL (watch/share format, not embed) and return embed info.
+     * Use this for bare URLs in paragraphs.
+     */
+    function parseVideoUrl(url) {
+      if (!url) return null;
+
+      // YouTube watch URLs: youtube.com/watch?v=xxx or youtu.be/xxx
+      const youtubeWatchMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
+      if (youtubeWatchMatch) {
+        return {
+          platform: 'YouTube',
+          videoId: youtubeWatchMatch[1],
+          embedUrl: `https://www.youtube.com/embed/${youtubeWatchMatch[1]}?rel=0`,
+          height: 315
+        };
+      }
+
+      // Vimeo URLs: vimeo.com/123456
+      const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
+      if (vimeoMatch) {
+        return {
+          platform: 'Vimeo',
+          videoId: vimeoMatch[1],
+          embedUrl: `https://player.vimeo.com/video/${vimeoMatch[1]}`,
+          height: 315
+        };
+      }
+
+      // Dailymotion URLs: dailymotion.com/video/xxx
+      const dailymotionMatch = url.match(/dailymotion\.com\/video\/([a-zA-Z0-9]+)/);
+      if (dailymotionMatch) {
+        return {
+          platform: 'Dailymotion',
+          videoId: dailymotionMatch[1],
+          embedUrl: `https://www.dailymotion.com/embed/video/${dailymotionMatch[1]}`,
+          height: 315
+        };
+      }
+
+      return null;
+    }
+
+    /**
      * Create an iframe block for video/audio embeds.
      */
     function createVideoEmbedBlock(videoInfo) {
@@ -2689,18 +2732,46 @@
             const img = element.querySelector('img');
             if (img && element.childNodes.length === 1) {
               blocks.push(convertImageToBlock(img));
-            } else {
-              const { plaintext, facets } = extractInlineFormatting(element);
-              if (plaintext) {
-                blocks.push({
-                  "$type": "pub.leaflet.pages.linearDocument#block",
-                  "block": {
-                    "$type": "pub.leaflet.blocks.text",
-                    "plaintext": plaintext,
-                    "facets": facets
-                  }
-                });
+              break;
+            }
+
+            // Check if paragraph contains only a video URL (isolated)
+            const textContent = element.textContent.trim();
+            const urlMatch = textContent.match(/^(https?:\/\/\S+)$/);
+            if (urlMatch) {
+              const videoInfo = parseVideoUrl(urlMatch[1]);
+              if (videoInfo) {
+                blocks.push(createVideoEmbedBlock(videoInfo));
+                break;
               }
+            }
+
+            // Also check if it's a link that wraps a video URL with no extra text
+            const link = element.querySelector('a');
+            if (link && element.childNodes.length === 1) {
+              const href = link.getAttribute('href') || '';
+              const linkText = link.textContent.trim();
+              // Only convert if link text is the URL itself (no custom anchor text)
+              if (linkText === href || linkText === href.replace(/^https?:\/\//, '')) {
+                const videoInfo = parseVideoUrl(href);
+                if (videoInfo) {
+                  blocks.push(createVideoEmbedBlock(videoInfo));
+                  break;
+                }
+              }
+            }
+
+            // Normal paragraph processing
+            const { plaintext, facets } = extractInlineFormatting(element);
+            if (plaintext) {
+              blocks.push({
+                "$type": "pub.leaflet.pages.linearDocument#block",
+                "block": {
+                  "$type": "pub.leaflet.blocks.text",
+                  "plaintext": plaintext,
+                  "facets": facets
+                }
+              });
             }
             break;
           }
