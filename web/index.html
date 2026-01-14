@@ -2276,6 +2276,13 @@
           plaintext += node.textContent;
         } else if (node.nodeType === Node.ELEMENT_NODE) {
           const tagName = node.tagName.toLowerCase();
+
+          // Handle <br> as newline
+          if (tagName === 'br') {
+            plaintext += '\n';
+            return;
+          }
+
           const startChar = plaintext.length;
 
           // Process children first to get the content
