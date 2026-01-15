@@ -269,6 +269,7 @@ build_web() {
     # Copy files
     cp "$WEB_DIR/index.html" "$dist_dir/"
     cp "$WEB_DIR/_headers" "$dist_dir/" 2>/dev/null || true
+    cp "$WEB_DIR/favicon.webp" "$dist_dir/" 2>/dev/null || true
     cp -r "$WEB_DIR/images" "$dist_dir/" 2>/dev/null || true
 
     # Inject version
