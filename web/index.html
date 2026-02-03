@@ -1206,10 +1206,16 @@
     function parseLeafletUri(uri) {
       uri = uri.trim();
 
-      // Format 1: at://did:plc:xxx/pub.leaflet.publication/rkey
-      const atMatch = uri.match(/^at:\/\/(did:[^/]+)\/pub\.leaflet\.publication\/([^/]+)$/);
-      if (atMatch) {
-        return { did: atMatch[1], rkey: atMatch[2], uri: uri };
+      // Format 1: at://did:plc:xxx/pub.leaflet.publication/rkey (old format)
+      const atMatchOld = uri.match(/^at:\/\/(did:[^/]+)\/pub\.leaflet\.publication\/([^/]+)$/);
+      if (atMatchOld) {
+        return { did: atMatchOld[1], rkey: atMatchOld[2], uri: uri };
+      }
+
+      // Format 1b: at://did:plc:xxx/site.standard.publication/rkey (new format)
+      const atMatchNew = uri.match(/^at:\/\/(did:[^/]+)\/site\.standard\.publication\/([^/]+)$/);
+      if (atMatchNew) {
+        return { did: atMatchNew[1], rkey: atMatchNew[2], uri: uri };
       }
 
       // Format 2 & 3: https://leaflet.pub/lish/did:plc:xxx/rkey or .../rkey/dashboard
@@ -1217,7 +1223,7 @@
       if (webMatch) {
         const did = webMatch[1];
         const rkey = webMatch[2];
-        // Reconstruct the AT URI
+        // Reconstruct the AT URI (use old format for compatibility, will be converted when creating documents)
         const atUri = `at://${did}/pub.leaflet.publication/${rkey}`;
         return { did, rkey, uri: atUri };
       }
@@ -1591,10 +1597,29 @@
     }
 
     async function fetchUserPublications(session) {
-      const result = await listRecords(session, 'pub.leaflet.publication');
+      // Fetch from both old and new publication formats
+      const [oldResult, newResult] = await Promise.all([
+        listRecords(session, 'pub.leaflet.publication'),
+        listRecords(session, 'site.standard.publication'),
+      ]);
+
+      // Combine records, preferring new format over old
+      const allRecords = [
+        ...(newResult.records || []),  // New format first (preferred)
+        ...(oldResult.records || []),
+      ];
+
+      // Deduplicate by rkey (same publication may exist in both formats)
+      const seenRkeys = new Set();
+      const uniqueRecords = allRecords.filter(record => {
+        const rkey = record.uri.split('/').pop();
+        if (seenRkeys.has(rkey)) return false;
+        seenRkeys.add(rkey);
+        return true;
+      });
 
       // Sort by createdAt date (newest first)
-      const publications = (result.records || []).map(record => ({
+      const publications = uniqueRecords.map(record => ({
         uri: record.uri,
         rkey: record.uri.split('/').pop(),
         name: record.value.name || 'Untitled Publication',
@@ -1694,29 +1719,35 @@
         const rkey = generateTid();
         const now = new Date().toISOString();
 
+        // Use site.standard.document format (properly indexed by firehose)
+        // Convert publication URI to site.standard.publication format if needed
+        const siteUri = publication.uri.replace('pub.leaflet.publication', 'site.standard.publication');
+
         const record = {
-          "$type": "pub.leaflet.document",
-          "author": session.did,
+          "$type": "site.standard.document",
           "title": "Test Post - Tumblr Importer",
+          "site": siteUri,
+          "publishedAt": now,
           "tags": [],
           "description": "This is a test post. You can delete it.",
-          "publication": publication.uri,
-          "publishedAt": now,
-          "pages": [{
-            "$type": "pub.leaflet.pages.linearDocument",
-            "id": generateUuid(),
-            "blocks": [{
-              "$type": "pub.leaflet.pages.linearDocument#block",
-              "block": {
-                "$type": "pub.leaflet.blocks.text",
-                "plaintext": "This is a test post created by Tumblr to Leaflet Importer. If you see this, the connection is working correctly! You can delete this post.",
-                "facets": [],
-              }
+          "content": {
+            "$type": "pub.leaflet.content",
+            "pages": [{
+              "$type": "pub.leaflet.pages.linearDocument",
+              "id": generateUuid(),
+              "blocks": [{
+                "$type": "pub.leaflet.pages.linearDocument#block",
+                "block": {
+                  "$type": "pub.leaflet.blocks.text",
+                  "plaintext": "This is a test post created by Tumblr to Leaflet Importer. If you see this, the connection is working correctly! You can delete this post.",
+                  "facets": [],
+                }
+              }],
             }],
-          }],
+          },
         };
 
-        const result = await createRecord(session, 'pub.leaflet.document', rkey, record);
+        const result = await createRecord(session, 'site.standard.document', rkey, record);
 
         state.testPostUri = result.uri;
         state.testPostRkey = rkey;
@@ -1770,7 +1801,7 @@
       setLoading(elements.btnDeleteTest, true);
 
       try {
-        await deleteRecord(state.bskySession, 'pub.leaflet.document', state.testPostRkey);
+        await deleteRecord(state.bskySession, 'site.standard.document', state.testPostRkey);
 
         state.testPostUri = null;
         state.testPostRkey = null;
@@ -2154,19 +2185,25 @@
       // Combine "tumblr-import" tag with original Tumblr tags
       const tags = ["tumblr-import", ...(post.tags || [])];
 
+      // Use site.standard.document format (properly indexed by firehose)
+      // Convert publication URI to site.standard.publication format if needed
+      const siteUri = publication.uri.replace('pub.leaflet.publication', 'site.standard.publication');
+
       const record = {
-        "$type": "pub.leaflet.document",
-        "author": session.did,
+        "$type": "site.standard.document",
         "title": title,
+        "site": siteUri,
+        "publishedAt": publishedAt,
         "tags": tags,
         "description": plainContent.slice(0, 300).trim(),
-        "publication": publication.uri,
-        "publishedAt": publishedAt,
-        "pages": [{
-          "$type": "pub.leaflet.pages.linearDocument",
-          "id": generateUuid(),
-          "blocks": blocks,
-        }],
+        "content": {
+          "$type": "pub.leaflet.content",
+          "pages": [{
+            "$type": "pub.leaflet.pages.linearDocument",
+            "id": generateUuid(),
+            "blocks": blocks,
+          }],
+        },
       };
 
       return { rkey, record };
@@ -2175,7 +2212,7 @@
     async function migratePost(post, session, publication) {
       const { rkey, record } = await convertTumblrPostToLeafletDocument(post, session, publication);
 
-      const result = await createRecord(session, 'pub.leaflet.document', rkey, record);
+      const result = await createRecord(session, 'site.standard.document', rkey, record);
 
       return {
         originalPost: post,
