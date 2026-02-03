@@ -201,10 +201,26 @@ def get_document_url(did, collection, rkey, record):
     # Default to leaflet.pub URL
     return f"https://leaflet.pub/lish/{did}/{pub_rkey}/{rkey}"
 
-def parse_facets(text):
+def resolve_handle(handle):
+    """Resolve a Bluesky handle to a DID"""
+    try:
+        response = requests.get(
+            f"https://bsky.social/xrpc/com.atproto.identity.resolveHandle",
+            params={"handle": handle},
+            timeout=5
+        )
+        if response.status_code == 200:
+            return response.json().get('did')
+    except:
+        pass
+    return None
+
+def parse_facets(text, resolve_mentions=True):
     """
-    Parse text for URLs and create Bluesky facets.
+    Parse text for URLs, mentions (@handle), and hashtags (#tag).
     Returns the facets array for rich text.
+
+    If resolve_mentions is True, will resolve @handles to DIDs for proper linking.
     """
     import re
     facets = []
@@ -213,19 +229,42 @@ def parse_facets(text):
     url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
     for match in re.finditer(url_pattern, text):
         url = match.group()
-        # Calculate byte positions
         start = len(text[:match.start()].encode('utf-8'))
         end = len(text[:match.end()].encode('utf-8'))
 
         facets.append({
-            "index": {
-                "byteStart": start,
-                "byteEnd": end
-            },
-            "features": [{
-                "$type": "app.bsky.richtext.facet#link",
-                "uri": url
-            }]
+            "index": {"byteStart": start, "byteEnd": end},
+            "features": [{"$type": "app.bsky.richtext.facet#link", "uri": url}]
+        })
+
+    # Find mentions (@handle.domain or @handle)
+    mention_pattern = r'@([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}|@[a-zA-Z0-9_]+'
+    for match in re.finditer(mention_pattern, text):
+        handle = match.group()[1:]  # Remove @ prefix
+        start = len(text[:match.start()].encode('utf-8'))
+        end = len(text[:match.end()].encode('utf-8'))
+
+        if resolve_mentions:
+            did = resolve_handle(handle)
+            if did:
+                facets.append({
+                    "index": {"byteStart": start, "byteEnd": end},
+                    "features": [{"$type": "app.bsky.richtext.facet#mention", "did": did}]
+                })
+                print(f"   Resolved @{handle} -> {did}")
+            else:
+                print(f"   WARNING: Could not resolve @{handle}")
+
+    # Find hashtags (#tag)
+    hashtag_pattern = r'#[a-zA-Z][a-zA-Z0-9_]*'
+    for match in re.finditer(hashtag_pattern, text):
+        tag = match.group()[1:]  # Remove # prefix
+        start = len(text[:match.start()].encode('utf-8'))
+        end = len(text[:match.end()].encode('utf-8'))
+
+        facets.append({
+            "index": {"byteStart": start, "byteEnd": end},
+            "features": [{"$type": "app.bsky.richtext.facet#tag", "tag": tag}]
         })
 
     return facets
